@@ -8,8 +8,8 @@ Gem::Specification.new do |spec|
   spec.authors = ["S-H-GAMELINKS"]
   spec.email = ["gamelinks007@gmail.com"]
 
-  spec.summary = "TODO: Write a short summary, because RubyGems requires one."
-  spec.description = "TODO: Write a longer description or delete this line."
+  spec.summary = "Terminal FPS game with raycasting engine"
+  spec.description = "A terminal-based first-person shooter with DDA raycasting, campaign mode, and PvP multiplayer."
   spec.homepage = "https://github.com/S-H-GAMELINKS/termfront"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
