@@ -6,3 +6,5 @@
 /pkg/
 /spec/reports/
 /tmp/
+termfront_server.crt
+termfront_server.key
