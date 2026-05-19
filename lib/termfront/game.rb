@@ -12,6 +12,8 @@ module Termfront
     def start
       enter_alt_screen
       loop do
+        reset_title_screen_state
+        @input.clear
         title = TitleScreen.new(@stdout)
         case title.show
         when :singleplayer then run_singleplayer
@@ -44,7 +46,10 @@ module Termfront
       @difficulty = 1
       loop do
         choice = show_mission_select
-        return if choice == :back
+        if choice == :back
+          clear_screen
+          return
+        end
 
         mission = Mission::Base.campaign[choice].new
         load_mission(mission, @difficulty)
@@ -165,7 +170,7 @@ module Termfront
     def show_mission_select
       selected = 0
       missions = Mission::Base.campaign
-      @stdout.syswrite("\e[?2026h\e[H\e[2J\e[?2026l")
+      TerminalOutput.write_all(@stdout, "\e[?2026h\e[H\e[2J\e[?2026l")
 
       STDIN.raw do |stdin|
         loop do
@@ -272,7 +277,7 @@ module Termfront
       (ctrl_row + 1).upto(rows) { |r| buf << "\e[#{r};1H\e[K" }
 
       buf << "\e[?2026l"
-      @stdout.syswrite(buf)
+      TerminalOutput.write_all(@stdout, buf)
     end
 
     def enter_alt_screen
@@ -281,6 +286,14 @@ module Termfront
 
     def leave_alt_screen
       print "\e[?25h\e[?1049l"
+    end
+
+    def clear_screen
+      TerminalOutput.write_all(@stdout, "\e[?2026h\e[H\e[2J\e[?2026l")
+    end
+
+    def reset_title_screen_state
+      TerminalOutput.write_all(@stdout, "\e[?25h\e[?1049l\e[?1049h\e[?25l\e[H\e[2J")
     end
 
     def clock

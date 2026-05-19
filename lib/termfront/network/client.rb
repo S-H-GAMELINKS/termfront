@@ -76,7 +76,7 @@ module Termfront
             buf << "\e[#{rows / 2 + 2};#{hc}H\e[90m#{hint}\e[0m"
 
             buf << "\e[?2026l"
-            @stdout.syswrite(buf)
+            TerminalOutput.write_all(@stdout, buf)
 
             next unless IO.select([stdin], nil, nil, Config::FRAME_DT)
 
@@ -109,7 +109,7 @@ module Termfront
             hc = [(cols - hint.size) / 2, 1].max
             buf << "\e[#{rows / 2 + 2};#{hc}H\e[90m#{hint}\e[0m"
             buf << "\e[?2026l"
-            @stdout.syswrite(buf)
+            TerminalOutput.write_all(@stdout, buf)
 
             if IO.select([stdin], nil, nil, 0)
               begin
@@ -347,7 +347,7 @@ module Termfront
         render_damage_flash(buf, view_h, view_w)
 
         buf << "\e[?2026l"
-        @stdout.syswrite(buf)
+        TerminalOutput.write_all(@stdout, buf)
       end
 
       def render_view(buf, view_h, view_w, wtop, wbot, wcol)
@@ -628,7 +628,7 @@ module Termfront
         r = rows / 2
         c = [(cols - text.size) / 2 + 1, 1].max
         buf << "\e[#{r};#{c}H#{color_code}#{text}\e[0m"
-        @stdout.syswrite(buf)
+        TerminalOutput.write_all(@stdout, buf)
       end
 
       def show_error(msg)
@@ -640,7 +640,7 @@ module Termfront
         hc = [(cols - hint.size) / 2, 1].max
         buf << "\e[#{rows / 2 + 2};#{hc}H\e[90m#{hint}\e[0m"
         buf << "\e[?2026l"
-        @stdout.syswrite(buf)
+        TerminalOutput.write_all(@stdout, buf)
         STDIN.raw { |s| s.getc }
       end
 

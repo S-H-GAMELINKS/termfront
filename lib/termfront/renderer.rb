@@ -51,7 +51,7 @@ module Termfront
       render_damage_flash(buf, view_h, view_w, player)
 
       buf << "\e[?2026l"
-      @stdout.syswrite(buf)
+      TerminalOutput.write_all(@stdout, buf)
     end
 
     def render_game_over(rows, cols)
@@ -62,13 +62,23 @@ module Termfront
       render_centered_message(rows, cols, "MISSION COMPLETE", "\e[1;92m")
     end
 
+    def render_blank(rows, cols)
+      buf = +"\e[?2026h\e[H"
+      rows.times do |row|
+        buf << "\e[#{row + 1};1H"
+        buf << (" " * cols)
+      end
+      buf << "\e[?2026l"
+      TerminalOutput.write_all(@stdout, buf)
+    end
+
     def render_centered_message(rows, cols, msg, color)
       buf = +"\e[?2026h\e[H\e[2J"
       r = rows / 2
       c = [(cols - msg.size) / 2 + 1, 1].max
       buf << "\e[#{r};#{c}H#{color}#{msg}\e[0m"
       buf << "\e[?2026l"
-      @stdout.syswrite(buf)
+      TerminalOutput.write_all(@stdout, buf)
     end
 
     def cast_ray(map, ox, oy, rdx, rdy)

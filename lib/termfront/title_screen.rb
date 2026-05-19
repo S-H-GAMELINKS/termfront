@@ -21,7 +21,7 @@ module Termfront
       @demo_wp_t = 0.0
       @demo_fire = 0
 
-      @stdout.syswrite("\e[?2026h\e[H\e[2J\e[?2026l")
+      TerminalOutput.write_all(@stdout, "\e[?2026h\e[H\e[2J\e[?2026l")
 
       STDIN.raw do |stdin|
         loop do
@@ -61,9 +61,18 @@ module Termfront
 
     def render
       rows, cols = @stdout.winsize
+      rows = [rows, 10].max
+      cols = [cols, 20].max
       buf = +"\e[?2026h\e[H"
+      rows.times do |row|
+        buf << "\e[#{row + 1};1H\e[K"
+      end
 
-      th = [rows - 10, 8].max
+      reserved_rows = 7
+      th = rows - reserved_rows
+      th = 3 if th < 3
+      th = rows - 3 if th >= rows
+      th = 1 if th < 1
       tw = [cols, 20].max
       virt_h = th * 2
       color = Array.new(tw * virt_h, nil)
@@ -262,21 +271,22 @@ module Termfront
       end
 
       # Title text
-      title_row = th + 2
+      title_row = [[th + 1, rows - 4].min, 1].max
       title = "T E R M F R O N T"
       sub   = "Terminal FPS"
-      tc = (cols - title.size) / 2
-      sc = (cols - sub.size) / 2
+      tc = [(cols - title.size) / 2 + 1, 1].max
+      sc = [(cols - sub.size) / 2 + 1, 1].max
       buf << "\e[#{title_row};1H\e[K"
       buf << "\e[#{title_row};#{tc}H\e[1;38;2;120;140;255m#{title}\e[0m"
       buf << "\e[#{title_row + 1};1H\e[K"
       buf << "\e[#{title_row + 1};#{sc}H\e[38;2;80;80;120m#{sub}\e[0m"
 
       # Menu items
-      menu_row = title_row + 3
       items = ["[P] PvP", "[C] Campaign", "[S] Training", "[Q] Quit"]
+      items_count_for_menu = items.size
+      menu_row = [[title_row + 2, rows - items_count_for_menu].min, 1].max
       items.each_with_index do |item, i|
-        ic = (cols - item.size) / 2
+        ic = [(cols - item.size) / 2 + 1, 1].max
         buf << "\e[#{menu_row + i};1H\e[K"
         buf << "\e[#{menu_row + i};#{ic}H\e[97m#{item}\e[0m"
       end
@@ -285,7 +295,7 @@ module Termfront
       last_row.upto(rows) { |r| buf << "\e[#{r};1H\e[K" }
 
       buf << "\e[?2026l"
-      @stdout.syswrite(buf)
+      TerminalOutput.write_all(@stdout, buf)
     end
   end
 end
