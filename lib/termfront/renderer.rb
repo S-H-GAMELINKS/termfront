@@ -55,22 +55,19 @@ module Termfront
     end
 
     def render_game_over(rows, cols)
-      buf = +"\e[H"
-      rows.times { buf << "#{" " * cols}\r\n" }
-      msg = "GAME OVER"
-      r = rows / 2
-      c = [(cols - msg.size) / 2 + 1, 1].max
-      buf << "\e[#{r};#{c}H\e[1;91m#{msg}\e[0m"
-      @stdout.syswrite(buf)
+      render_centered_message(rows, cols, "GAME OVER", "\e[1;91m")
     end
 
     def render_mission_complete(rows, cols)
-      buf = +"\e[H"
-      rows.times { buf << "#{" " * cols}\r\n" }
-      msg = "MISSION COMPLETE"
+      render_centered_message(rows, cols, "MISSION COMPLETE", "\e[1;92m")
+    end
+
+    def render_centered_message(rows, cols, msg, color)
+      buf = +"\e[?2026h\e[H\e[2J"
       r = rows / 2
       c = [(cols - msg.size) / 2 + 1, 1].max
-      buf << "\e[#{r};#{c}H\e[1;92m#{msg}\e[0m"
+      buf << "\e[#{r};#{c}H#{color}#{msg}\e[0m"
+      buf << "\e[?2026l"
       @stdout.syswrite(buf)
     end
 
