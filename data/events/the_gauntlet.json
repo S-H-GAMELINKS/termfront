@@ -4,22 +4,23 @@
       "id": "the_gauntlet_intro",
       "trigger": { "type": "mission_start" },
       "actions": [
-        { "type": "dialogue", "speaker": "OPS", "text": "The service corridor ahead is a kill lane." },
-        { "type": "dialogue", "speaker": "OPS", "text": "Push through fast and read any terminal that still answers." }
+        { "type": "dialogue", "speaker": "OPS", "text": "The service corridor ahead is a kill lane, but its layout is wrong for defense." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Push through fast. If a terminal still answers, check why the shutters were chained inward." }
       ]
     },
     {
       "id": "the_gauntlet_terminal_service",
       "trigger": { "type": "terminal_used", "terminal_id": "service_hub" },
       "actions": [
-        { "type": "text", "text": "SERVICE HUB\nEmergency shutters failed in sequence.\nWitnesses reported synchronized movement before first contact." }
+        { "type": "text", "text": "SERVICE HUB\nEmergency shutters failed in sequence from the archive end of the corridor.\nWitnesses reported synchronized movement before first contact, as if something was herding them away from the vault." }
       ]
     },
     {
       "id": "the_gauntlet_outro",
       "trigger": { "type": "mission_complete" },
       "actions": [
-        { "type": "dialogue", "speaker": "OPS", "text": "You made it through. The path deeper into the complex is open." }
+        { "type": "dialogue", "speaker": "OPS", "text": "You made it through. The path deeper into the complex is open." },
+        { "type": "dialogue", "speaker": "OPS", "text": "These corridors were built to funnel breaches back toward the core. Move on the stronghold and find who broke the seal." }
       ]
     }
   ]

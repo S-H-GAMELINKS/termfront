@@ -4,22 +4,23 @@
       "id": "corridor_sweep_intro",
       "trigger": { "type": "mission_start" },
       "actions": [
-        { "type": "dialogue", "speaker": "OPS", "text": "Facility A-13 went dark six hours ago." },
-        { "type": "dialogue", "speaker": "OPS", "text": "Sweep the access corridor and recover any surviving logs." }
+        { "type": "dialogue", "speaker": "OPS", "text": "Facility A-13 went dark six hours ago. This corridor is your first live sector." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Sweep the access corridor and recover any surviving logs before local systems collapse." }
       ]
     },
     {
       "id": "corridor_terminal_a",
       "trigger": { "type": "terminal_used", "terminal_id": "ops_corridor_a" },
       "actions": [
-        { "type": "text", "text": "OPS LOG 04\nPower loss started in the maintenance wing.\nDo not let the chanting spread beyond Sector C." }
+        { "type": "text", "text": "OPS LOG 04\nPower loss started in the maintenance wing, then moved against cable direction.\nSecurity sealed Sector C after staff reported chanting inside locked rooms." }
       ]
     },
     {
       "id": "corridor_sweep_outro",
       "trigger": { "type": "mission_complete" },
       "actions": [
-        { "type": "dialogue", "speaker": "OPS", "text": "Corridor secure. The blackout did not stop the transmissions." }
+        { "type": "dialogue", "speaker": "OPS", "text": "Corridor secure. The blackout did not stop the transmissions." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Advance to the service run. If the logs are right, the facility was sealing something in, not keeping us out." }
       ]
     }
   ]

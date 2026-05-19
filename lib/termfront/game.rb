@@ -7,6 +7,7 @@ module Termfront
       @renderer = Renderer.new(@stdout)
       @input = Input.new
       @scene_player = ScenePlayer.new(@stdout)
+      @demo_player = DemoPlayer.new(@stdout, @renderer)
       @difficulty = nil
     end
 
@@ -133,7 +134,6 @@ module Termfront
 
       if keys.include?(:e)
         terminal = nearest_terminal
-        debug_terminal("interact_pressed", terminal: terminal, player: [@player.x, @player.y])
         if terminal
           play_terminal_event(terminal, stdin)
           return true
@@ -164,16 +164,13 @@ module Termfront
 
     def play_terminal_event(terminal, stdin)
       events = @event_runtime.trigger(:terminal_used, terminal_id: terminal[:id])
-      debug_terminal("terminal_triggered", terminal: terminal, event_count: events.size)
       actions = if events.empty?
                   [{ type: :text, text: "TERMINAL OFFLINE\nNo readable data remains." }]
                 else
                   events.flat_map { |event| event[:actions] }
                 end
-      debug_terminal("terminal_actions_built", terminal: terminal, action_count: actions.size)
       @input.clear
-      @scene_player.play(actions, title: "Terminal", stdin: stdin)
-      debug_terminal("terminal_scene_finished", terminal: terminal)
+      play_actions(actions, title: "Terminal", stdin: stdin)
       @input.clear
     end
 
@@ -183,9 +180,29 @@ module Termfront
 
       @input.clear
       events.each do |event|
-        @scene_player.play(event[:actions], title: title, stdin: stdin)
+        play_actions(event[:actions], title: title, stdin: stdin)
       end
       @input.clear
+    end
+
+    def play_actions(actions, title:, stdin:)
+      buffer = []
+
+      actions.each do |action|
+        if action[:type] == :demo
+          unless buffer.empty?
+            @scene_player.play(buffer, title: title, stdin: stdin)
+            buffer.clear
+          end
+          @demo_player.play(action, mission: @mission, stdin: stdin)
+        else
+          buffer << action
+        end
+      end
+
+      return if buffer.empty?
+
+      @scene_player.play(buffer, title: title, stdin: stdin)
     end
 
     def update(dt)
@@ -413,14 +430,6 @@ module Termfront
 
     def reset_title_screen_state
       TerminalOutput.write_all(@stdout, "\e[?25h\e[?1049l\e[?1049h\e[?25l\e[H\e[2J")
-    end
-
-    def debug_terminal(event, data = {})
-      File.open("/tmp/termfront-terminal-debug.log", "a") do |file|
-        file.puts({ t: Time.now.to_f, event: event, data: data }.inspect)
-      end
-    rescue StandardError
-      nil
     end
 
     def clock

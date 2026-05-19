@@ -8,7 +8,6 @@ module Termfront
 
     def play(actions, title:, stdin: nil)
       pages = build_pages(actions)
-      debug_scene("play_called", title: title, action_count: actions.size, page_count: pages.size)
       return if pages.empty?
 
       if stdin
@@ -24,7 +23,6 @@ module Termfront
       index = 0
 
       loop do
-        debug_scene("render_page", title: title, page_index: index, total_pages: pages.size)
         render_page(title, pages[index], index + 1, pages.size)
 
         input = wait_for_advance(stdin)
@@ -66,16 +64,10 @@ module Termfront
       top = " #{title.upcase} "
       buf << "\e[2;3H\e[1;96m#{top}\e[0m"
 
-      if page[:speaker]
-        buf << "\e[4;3H\e[1;93m#{page[:speaker]}\e[0m"
-      end
-
-      start_row = page[:speaker] ? 6 : 5
-      page[:lines].each_with_index do |line, index|
-        row = start_row + index
-        break if row >= rows - 2
-
-        buf << "\e[#{row};3H#{line}"
+      if page[:type] == :title_card
+        render_title_card_page(buf, rows, cols, page)
+      else
+        render_text_page(buf, rows, page)
       end
 
       footer = "[Enter] Next  [Esc] Skip"
@@ -98,6 +90,7 @@ module Termfront
         lines = wrap_action(action, width)
         lines.each_slice(max_lines).map do |slice|
           {
+            type: action[:type],
             speaker: action[:speaker],
             lines: slice
           }
@@ -136,12 +129,28 @@ module Termfront
       lines
     end
 
-    def debug_scene(event, data = {})
-      File.open("/tmp/termfront-terminal-debug.log", "a") do |file|
-        file.puts({ t: Time.now.to_f, event: event, data: data }.inspect)
+    def render_text_page(buf, rows, page)
+      if page[:speaker]
+        buf << "\e[4;3H\e[1;93m#{page[:speaker]}\e[0m"
       end
-    rescue StandardError
-      nil
+
+      start_row = page[:speaker] ? 6 : 5
+      page[:lines].each_with_index do |line, index|
+        row = start_row + index
+        break if row >= rows - 2
+
+        buf << "\e[#{row};3H#{line}"
+      end
+    end
+
+    def render_title_card_page(buf, rows, cols, page)
+      total_lines = page[:lines].size
+      start_row = [[(rows - total_lines) / 2, 4].max, rows - total_lines - 2].min
+
+      page[:lines].each_with_index do |line, index|
+        col = [(cols - line.size) / 2 + 1, 1].max
+        buf << "\e[#{start_row + index};#{col}H\e[1;97m#{line}\e[0m"
+      end
     end
   end
 end

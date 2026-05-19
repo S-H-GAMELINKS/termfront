@@ -38,6 +38,16 @@ module Termfront
       nil
     end
 
+    def training_dummy(nx, ny)
+      return "235;80;80" if ((nx - 0.5) / 0.18)**2 + ((ny - 0.18) / 0.14)**2 <= 1.0
+      return "210;210;210" if ((nx - 0.5) / 0.08)**2 + ((ny - 0.42) / 0.14)**2 <= 1.0
+      return "200;200;200" if ((nx - 0.5) / 0.22)**2 + ((ny - 0.66) / 0.12)**2 <= 1.0
+      return "180;180;180" if ((nx - 0.38) / 0.08)**2 + ((ny - 0.90) / 0.12)**2 <= 1.0
+      return "180;180;180" if ((nx - 0.62) / 0.08)**2 + ((ny - 0.90) / 0.12)**2 <= 1.0
+
+      nil
+    end
+
     def wall_brightness(dist, side)
       b = 255 - [[(dist * 2.5).to_i, 0].max, 19].min
       b -= 3 if side == 1
@@ -47,7 +57,8 @@ module Termfront
     REGISTRY = {
       executor: method(:executor),
       crawler: method(:crawler),
-      player: method(:player)
+      player: method(:player),
+      training_dummy: method(:training_dummy)
     }
 
     def self.for(sprite_id, nx, ny)

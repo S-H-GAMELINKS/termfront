@@ -4,22 +4,23 @@
       "id": "stronghold_intro",
       "trigger": { "type": "mission_start" },
       "actions": [
-        { "type": "dialogue", "speaker": "OPS", "text": "Inner rooms are fortified. Executors are holding the choke points." },
-        { "type": "dialogue", "speaker": "OPS", "text": "Break the stronghold and find the source of their command signal." }
+        { "type": "dialogue", "speaker": "OPS", "text": "Inner rooms are fortified. Executors are holding the choke points on purpose." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Break the stronghold and find the source of their command signal before it reroutes again." }
       ]
     },
     {
       "id": "stronghold_terminal_guard",
       "trigger": { "type": "terminal_used", "terminal_id": "guard_post" },
       "actions": [
-        { "type": "text", "text": "SECURITY POST\nStaff rotation suspended.\nAny report of ritual language is to be escalated, not logged locally." }
+        { "type": "text", "text": "SECURITY POST\nStaff rotation suspended by archive authority, not site command.\nAny report of ritual language is to be escalated and removed from local logs before outside review." }
       ]
     },
     {
       "id": "stronghold_outro",
       "trigger": { "type": "mission_complete" },
       "actions": [
-        { "type": "dialogue", "speaker": "OPS", "text": "Stronghold is down. Something in the facility wanted time, not victory." }
+        { "type": "dialogue", "speaker": "OPS", "text": "Stronghold is down. Something in the facility wanted time, not victory." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Archive authority overrode local containment. Push the final gate and confirm what they were trying to keep active." }
       ]
     }
   ]
