@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "id": "training_grounds_intro",
+      "trigger": { "type": "mission_start" },
+      "actions": [
+        { "type": "title_card", "text": "OPERATION: TRAINING GROUNDS\nSIMULATION WING / SECTOR A-13" },
+        { "type": "dialogue", "speaker": "OPS", "text": "This is a training sweep on paper. Treat it like deployment anyway." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Sector A-13 lost contact beyond this wing. We are not waiting for a second failure." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Use the yard terminals. They still carry the old incident briefings." }
+      ]
+    },
+    {
+      "id": "training_grounds_terminal_intro",
+      "trigger": { "type": "terminal_used", "terminal_id": "training_console" },
+      "actions": [
+        { "type": "text", "text": "TRAINING CONSOLE\nIncident drill package: Sector A-13 containment loss.\nScenario note: field teams are not to be told whether the exercise has gone live." }
+      ]
+    },
+    {
+      "id": "training_grounds_outro",
+      "trigger": { "type": "mission_complete" },
+      "actions": [
+        { "type": "title_card", "text": "SECTOR SECURE\nTRAINING SWEEP COMPLETE" },
+        { "type": "dialogue", "speaker": "OPS", "text": "Training sweep complete. Your live assignment starts now." },
+        { "type": "dialogue", "speaker": "OPS", "text": "The blackout in the next sector is real. This was the last clean room." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Move to the access corridor. Recover logs before the sector goes completely dark." }
+      ]
+    }
+  ]
+}
