@@ -156,8 +156,10 @@ module Termfront
             dt = now - last_time
             last_time = now
 
-            @input.process(stdin, player: @player)
+            keys = @input.process(stdin, player: @player)
             return if @input.key?(:q) || @input.key?(:esc)
+
+            handle_player_actions(keys)
 
             handle_messages
             update(dt)
@@ -185,6 +187,24 @@ module Termfront
             cap_frame(now)
           end
         end
+      end
+
+      def handle_player_actions(keys)
+        @player.swap_weapon if keys.include?(:t)
+
+        if keys.include?(:e)
+          @player.try_pickup
+        end
+
+        return unless keys.include?(:space)
+
+        weapon = @player.current_weapon
+        return unless weapon.can_fire?(@player.last_fire, @player.game_time)
+        return unless weapon.infinite_ammo? || (weapon.ammo && weapon.ammo > 0)
+
+        @player.fire_flash = 4
+        weapon.consume_ammo!
+        @player.last_fire = @player.game_time
       end
 
       def handle_messages

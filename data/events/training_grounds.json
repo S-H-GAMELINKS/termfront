@@ -1,0 +1,26 @@
+{
+  "events": [
+    {
+      "id": "training_grounds_intro",
+      "trigger": { "type": "mission_start" },
+      "actions": [
+        { "type": "dialogue", "speaker": "OPS", "text": "Training grounds first. Learn the layout before the real sweep." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Use the compound terminals. They still carry the old briefings." }
+      ]
+    },
+    {
+      "id": "training_grounds_terminal_intro",
+      "trigger": { "type": "terminal_used", "terminal_id": "training_console" },
+      "actions": [
+        { "type": "text", "text": "TRAINING CONSOLE\nRemember: every live sector was once a drill.\nIf a terminal responds, read it." }
+      ]
+    },
+    {
+      "id": "training_grounds_outro",
+      "trigger": { "type": "mission_complete" },
+      "actions": [
+        { "type": "dialogue", "speaker": "OPS", "text": "Training sweep complete. Move to the live sector when ready." }
+      ]
+    }
+  ]
+}

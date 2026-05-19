@@ -6,6 +6,7 @@ module Termfront
       @stdout = STDOUT
       @renderer = Renderer.new(@stdout)
       @input = Input.new
+      @scene_player = ScenePlayer.new(@stdout)
       @difficulty = nil
     end
 
@@ -53,14 +54,22 @@ module Termfront
 
         mission = Mission::Base.campaign[choice].new
         load_mission(mission, @difficulty)
-        result = run_game_loop
+        play_events(:mission_start, stdin: nil, title: mission.name)
+        result = run_game_loop(show_complete_banner: false)
         return if result == :quit
+        if result == :mission_complete
+          play_events(:mission_complete, stdin: nil, title: mission.name)
+          rows, cols = @stdout.winsize
+          @renderer.render_mission_complete(rows, cols)
+          sleep 2
+        end
       end
     ensure
       @difficulty = nil
     end
 
     def load_mission(mission, difficulty_index)
+      @mission = mission
       @map = mission.build_map
       weapons = mission.build_weapons
       x, y, angle = mission.spawn
@@ -68,9 +77,11 @@ module Termfront
       @enemies = mission.build_enemies(difficulty_index)
       @projectiles = []
       @player.drops = []
+      @terminals = mission.build_terminals
+      @event_runtime = Mission::EventRuntime.new(mission.event_definitions)
     end
 
-    def run_game_loop
+    def run_game_loop(show_complete_banner: true)
       STDIN.raw do |stdin|
         last_time = clock
 
@@ -79,14 +90,19 @@ module Termfront
           dt = now - last_time
           last_time = now
 
-          @input.process(stdin, player: @player)
+          keys = @input.process(stdin, player: @player)
           return :quit if @input.key?(:q) || @input.key?(:esc)
+
+          if handle_player_actions(keys, stdin)
+            last_time = clock
+            next
+          end
 
           update(dt)
           @renderer.render(
             player: @player, map: @map,
             enemies: @enemies, projectiles: @projectiles,
-            drops: @player.drops
+            drops: @player.drops, terminals: @terminals
           )
 
           if @player.dead
@@ -97,15 +113,79 @@ module Termfront
           end
 
           if @enemies.all? { |e| !e.alive }
-            rows, cols = @stdout.winsize
-            @renderer.render_mission_complete(rows, cols)
-            sleep 2
+            if show_complete_banner
+              rows, cols = @stdout.winsize
+              @renderer.render_mission_complete(rows, cols)
+              sleep 2
+            end
             return :mission_complete
           end
 
           cap_frame(now)
         end
       end
+    end
+
+    def handle_player_actions(keys, stdin)
+      if keys.include?(:t)
+        @player.swap_weapon
+      end
+
+      if keys.include?(:e)
+        terminal = nearest_terminal
+        debug_terminal("interact_pressed", terminal: terminal, player: [@player.x, @player.y])
+        if terminal
+          play_terminal_event(terminal, stdin)
+          return true
+        end
+
+        @player.try_pickup
+      end
+
+      return false unless keys.include?(:space)
+
+      weapon = @player.current_weapon
+      return false unless weapon.can_fire?(@player.last_fire, @player.game_time)
+      return false unless weapon.infinite_ammo? || (weapon.ammo && weapon.ammo > 0)
+
+      @player.fire_flash = 4
+      weapon.consume_ammo!
+      @player.last_fire = @player.game_time
+      false
+    end
+
+    def nearest_terminal
+      @terminals
+        .map { |terminal| [terminal, (terminal[:x] - @player.x)**2 + (terminal[:y] - @player.y)**2] }
+        .select { |_, distance_sq| distance_sq < Config::TERMINAL_USE_RADIUS**2 }
+        .min_by { |_, distance_sq| distance_sq }
+        &.first
+    end
+
+    def play_terminal_event(terminal, stdin)
+      events = @event_runtime.trigger(:terminal_used, terminal_id: terminal[:id])
+      debug_terminal("terminal_triggered", terminal: terminal, event_count: events.size)
+      actions = if events.empty?
+                  [{ type: :text, text: "TERMINAL OFFLINE\nNo readable data remains." }]
+                else
+                  events.flat_map { |event| event[:actions] }
+                end
+      debug_terminal("terminal_actions_built", terminal: terminal, action_count: actions.size)
+      @input.clear
+      @scene_player.play(actions, title: "Terminal", stdin: stdin)
+      debug_terminal("terminal_scene_finished", terminal: terminal)
+      @input.clear
+    end
+
+    def play_events(type, stdin:, title:)
+      events = @event_runtime.trigger(type)
+      return if events.empty?
+
+      @input.clear
+      events.each do |event|
+        @scene_player.play(event[:actions], title: title, stdin: stdin)
+      end
+      @input.clear
     end
 
     def update(dt)
@@ -164,7 +244,46 @@ module Termfront
         end
       end
 
+      relocate_drops_off_terminals
+
       @player.update_shield(dt, @stdout)
+    end
+
+    def relocate_drops_off_terminals
+      return if @terminals.empty? || @player.drops.empty?
+
+      @player.drops.each do |drop|
+        terminal = @terminals.find do |candidate|
+          same_map_cell?(drop.x, drop.y, candidate[:x], candidate[:y])
+        end
+        next unless terminal
+
+        fallback = find_drop_slot_near(terminal[:x], terminal[:y])
+        next unless fallback
+
+        drop.x = fallback[0]
+        drop.y = fallback[1]
+      end
+    end
+
+    def find_drop_slot_near(x, y)
+      [
+        [0.0, -0.9], [0.9, 0.0], [0.0, 0.9], [-0.9, 0.0],
+        [0.9, -0.9], [0.9, 0.9], [-0.9, 0.9], [-0.9, -0.9]
+      ].each do |dx, dy|
+        nx = x + dx
+        ny = y + dy
+        next if @map.blocked?(nx, ny, 0.15)
+        next if @terminals.any? { |terminal| same_map_cell?(nx, ny, terminal[:x], terminal[:y]) }
+
+        return [nx, ny]
+      end
+
+      nil
+    end
+
+    def same_map_cell?(ax, ay, bx, by)
+      ax.floor == bx.floor && ay.floor == by.floor
     end
 
     def show_mission_select
@@ -294,6 +413,14 @@ module Termfront
 
     def reset_title_screen_state
       TerminalOutput.write_all(@stdout, "\e[?25h\e[?1049l\e[?1049h\e[?25l\e[H\e[2J")
+    end
+
+    def debug_terminal(event, data = {})
+      File.open("/tmp/termfront-terminal-debug.log", "a") do |file|
+        file.puts({ t: Time.now.to_f, event: event, data: data }.inspect)
+      end
+    rescue StandardError
+      nil
     end
 
     def clock

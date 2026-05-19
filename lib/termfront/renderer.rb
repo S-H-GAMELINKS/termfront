@@ -6,7 +6,7 @@ module Termfront
       @stdout = stdout
     end
 
-    def render(player:, map:, enemies:, projectiles:, drops:)
+    def render(player:, map:, enemies:, projectiles:, drops:, terminals: [])
       rows, cols = @stdout.winsize
       rows = [rows, 6].max
       cols = [cols, 20].max
@@ -42,11 +42,11 @@ module Termfront
 
       buf = +"\e[?2026h\e[H"
 
-      render_hud(buf, cols, player, drops)
+      render_hud(buf, cols, player, drops, terminals)
       render_view(buf, view_h, view_w, wtop, wbot, wcol)
       render_enemies_3d(buf, view_h, view_w, dists, player, enemies, projectiles, drops)
       buf << "\e[#{3 + view_h};1H"
-      render_radar(buf, cols, radar_h, player, enemies, drops)
+      render_radar(buf, cols, radar_h, player, enemies, drops, terminals)
       render_crosshair(buf, view_h, view_w, cols, player)
       render_damage_flash(buf, view_h, view_w, player)
 
@@ -130,7 +130,7 @@ module Termfront
 
     private
 
-    def render_hud(buf, cols, player, drops)
+    def render_hud(buf, cols, player, drops, terminals)
       bar_w = [cols - 20, 10].max
       pct = player.shield / Config::SHIELD_MAX.to_f
       filled = (pct * bar_w).to_i
@@ -161,9 +161,18 @@ module Termfront
       end
 
       can_pickup = drops.any? { |d| d.in_range?(player.x, player.y) }
-      pickup_str = can_pickup ? "\e[1;93m[E]Pickup\e[0m" : "E:pickup"
+      can_use_terminal = terminals.any? do |terminal|
+        (terminal[:x] - player.x)**2 + (terminal[:y] - player.y)**2 < Config::TERMINAL_USE_RADIUS**2
+      end
+      interact_str = if can_use_terminal
+                       "\e[1;96m[E]Use Terminal\e[0m"
+                     elsif can_pickup
+                       "\e[1;93m[E]Pickup\e[0m"
+                     else
+                       "E:interact"
+                     end
 
-      line = "#{ammo_str}  T:swap  #{pickup_str}  Space:fire"
+      line = "#{ammo_str}  T:swap  #{interact_str}  Space:fire"
       buf << line.ljust(cols + 30)[0, cols + 30] << "\e[K\r\n"
     end
 
@@ -209,7 +218,7 @@ module Termfront
       end
     end
 
-    def render_radar(buf, cols, radar_h, player, enemies, drops)
+    def render_radar(buf, cols, radar_h, player, enemies, drops, terminals)
       buf << ("\xE2\x94\x80" * cols)[0, cols * 3] << "\e[K\r\n"
 
       r = Config::RADAR_RADIUS
@@ -272,12 +281,31 @@ module Termfront
         drop_cells[[sy, sx]] = d
       end
 
+      terminal_cells = {}
+      terminals.each do |terminal|
+        ex = terminal[:x] - player.x
+        ey = terminal[:y] - player.y
+        dist = Math.sqrt(ex * ex + ey * ey)
+        next if dist > Config::RADAR_RANGE
+
+        rx = -(ex * cos_a - ey * sin_a)
+        ry = -(ex * sin_a + ey * cos_a)
+        sx = r + (rx / Config::RADAR_RANGE * r).round
+        sy = r + (ry / Config::RADAR_RANGE * r).round
+        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+
+        d2 = (sx - r)**2 + (sy - r)**2
+        next if d2 > r * r
+
+        terminal_cells[[sy, sx]] = terminal
+      end
+
       alive_count = enemies.count(&:alive)
       total_count = enemies.size
       info_lines = [
         "Enemies: #{alive_count}/#{total_count}",
         "Heading: #{format("%.0f", (player.angle % (Math::PI * 2)) * 180 / Math::PI)}\xC2\xB0",
-        "Pos: (#{"%.1f" % player.x}, #{"%.1f" % player.y})"
+        "Pos: (#{"%.1f" % player.x}, #{"%.1f" % player.y})  T:terminal"
       ]
 
       radar_h.times do |row|
@@ -291,6 +319,8 @@ module Termfront
               dc = drop.type.to_s.start_with?("shock") ? "\e[96m" : "\e[93m"
               dl = Weapon::Base.registry[drop.type].new.name[0]
               buf << "#{dc}#{dl}\e[0m"
+            elsif terminal_cells[[row, cx]]
+              buf << "\e[96mT\e[0m"
             elsif row == r && cx == r
               buf << "\e[92m^\e[0m"
             elsif grid[row][cx] == "#"

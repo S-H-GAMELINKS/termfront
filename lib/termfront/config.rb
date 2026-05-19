@@ -22,6 +22,7 @@ module Termfront
     BEEP_INTERVAL  = 0.15
 
     PICKUP_RADIUS = 0.8
+    TERMINAL_USE_RADIUS = 2.25
 
     PROJ_SPEED  = 2.5
     PROJ_RADIUS = 0.3

@@ -1,0 +1,26 @@
+{
+  "events": [
+    {
+      "id": "final_push_intro",
+      "trigger": { "type": "mission_start" },
+      "actions": [
+        { "type": "dialogue", "speaker": "OPS", "text": "This is the last gate. Expect fortress-grade resistance." },
+        { "type": "dialogue", "speaker": "OPS", "text": "If the archive core is intact, bring back whatever it stored." }
+      ]
+    },
+    {
+      "id": "final_push_terminal_archive",
+      "trigger": { "type": "terminal_used", "terminal_id": "archive_core" },
+      "actions": [
+        { "type": "text", "text": "ARCHIVE CORE\nDirective mismatch detected.\nContainment protocol revoked by local command authority." }
+      ]
+    },
+    {
+      "id": "final_push_outro",
+      "trigger": { "type": "mission_complete" },
+      "actions": [
+        { "type": "dialogue", "speaker": "OPS", "text": "Fortress cleared. The signal is still active somewhere below you." }
+      ]
+    }
+  ]
+}

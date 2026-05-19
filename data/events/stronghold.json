@@ -1,0 +1,26 @@
+{
+  "events": [
+    {
+      "id": "stronghold_intro",
+      "trigger": { "type": "mission_start" },
+      "actions": [
+        { "type": "dialogue", "speaker": "OPS", "text": "Inner rooms are fortified. Executors are holding the choke points." },
+        { "type": "dialogue", "speaker": "OPS", "text": "Break the stronghold and find the source of their command signal." }
+      ]
+    },
+    {
+      "id": "stronghold_terminal_guard",
+      "trigger": { "type": "terminal_used", "terminal_id": "guard_post" },
+      "actions": [
+        { "type": "text", "text": "SECURITY POST\nStaff rotation suspended.\nAny report of ritual language is to be escalated, not logged locally." }
+      ]
+    },
+    {
+      "id": "stronghold_outro",
+      "trigger": { "type": "mission_complete" },
+      "actions": [
+        { "type": "dialogue", "speaker": "OPS", "text": "Stronghold is down. Something in the facility wanted time, not victory." }
+      ]
+    }
+  ]
+}
