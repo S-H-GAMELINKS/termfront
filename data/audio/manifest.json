@@ -1,0 +1,17 @@
+{
+  "bgm": {
+    "title": "data/audio/title.mp3",
+    "mission": "data/audio/sector.mp3"
+  },
+  "se": {
+    "shoot": "data/audio/shoot_01.ogg",
+    "damage": "data/audio/sfx_22b.ogg",
+    "terminal": "data/audio/button1.ogg",
+    "mission_clear": "data/audio/complete.ogg",
+    "page": "data/audio/on.ogg",
+    "shield_alarm": "data/audio/beep_02.ogg"
+  },
+  "loop_se": {
+    "shield_regen": "data/audio/victory.mp3"
+  }
+}

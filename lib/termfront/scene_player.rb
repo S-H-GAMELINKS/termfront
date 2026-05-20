@@ -2,8 +2,9 @@
 
 module Termfront
   class ScenePlayer
-    def initialize(stdout)
+    def initialize(stdout, audio: nil)
       @stdout = stdout
+      @audio = audio
     end
 
     def play(actions, title:, stdin: nil)
@@ -28,6 +29,7 @@ module Termfront
         input = wait_for_advance(stdin)
         return if input == :skip
 
+        @audio&.play_se(:page)
         index += 1
         return if index >= pages.size
       end
