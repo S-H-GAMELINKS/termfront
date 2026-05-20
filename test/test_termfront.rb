@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "stringio"
 
 class TestTermfront < Minitest::Test
   def test_that_it_has_a_version_number
@@ -68,5 +69,36 @@ class TestTermfront < Minitest::Test
     assert_equal 1, runtime.trigger(:terminal_used, terminal_id: :alpha).size
     assert_empty runtime.trigger(:terminal_used, terminal_id: :alpha)
     assert_empty runtime.trigger(:terminal_used, terminal_id: :beta)
+  end
+
+  def test_player_starts_and_stops_shield_regen_loop
+    player = Termfront::Player.new(
+      x: 1.5, y: 1.5, angle: 0.0,
+      weapons: [Termfront::Weapon::Base.build(:pistol), Termfront::Weapon::Base.build(:pistol)]
+    )
+    player.shield = 50.0
+    player.game_time = Termfront::Config::SHIELD_DELAY
+
+    audio = Class.new do
+      attr_reader :events
+
+      def initialize
+        @events = []
+      end
+
+      def play_loop_se(name)
+        @events << [:play, name]
+      end
+
+      def stop_loop_se(name = nil)
+        @events << [:stop, name]
+      end
+    end.new
+
+    player.update_shield(0.1, StringIO.new, audio: audio)
+    player.shield = Termfront::Config::SHIELD_MAX
+    player.update_shield(0.1, StringIO.new, audio: audio)
+
+    assert_equal [[:play, :shield_regen], [:stop, :shield_regen]], audio.events
   end
 end

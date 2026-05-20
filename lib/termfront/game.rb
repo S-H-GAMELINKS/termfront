@@ -4,9 +4,10 @@ module Termfront
   class Game
     def initialize
       @stdout = STDOUT
+      @audio = AudioManager.new
       @renderer = Renderer.new(@stdout)
       @input = Input.new
-      @scene_player = ScenePlayer.new(@stdout)
+      @scene_player = ScenePlayer.new(@stdout, audio: @audio)
       @demo_player = DemoPlayer.new(@stdout, @renderer)
       @difficulty = nil
     end
@@ -17,7 +18,10 @@ module Termfront
         reset_title_screen_state
         @input.clear
         title = TitleScreen.new(@stdout)
-        case title.show
+        @audio.play_bgm(:title)
+        choice = title.show
+        @audio.stop_bgm
+        case choice
         when :singleplayer then run_singleplayer
         when :campaign     then run_campaign
         when :pvp          then Network::Client.new(@stdout).run
@@ -29,6 +33,7 @@ module Termfront
     rescue StandardError => e
       @crash = e
     ensure
+      @audio.close
       leave_alt_screen
       if @crash
         warn "#{@crash.class}: #{@crash.message}"
@@ -41,7 +46,10 @@ module Termfront
     def run_singleplayer
       mission = Mission::Training.new
       load_mission(mission, nil)
+      @audio.play_bgm(:mission)
       run_game_loop
+    ensure
+      @audio.stop_bgm
     end
 
     def run_campaign
@@ -55,17 +63,21 @@ module Termfront
 
         mission = Mission::Base.campaign[choice].new
         load_mission(mission, @difficulty)
+        @audio.play_bgm(:mission)
         play_events(:mission_start, stdin: nil, title: mission.name)
         result = run_game_loop(show_complete_banner: false)
         return if result == :quit
         if result == :mission_complete
           play_events(:mission_complete, stdin: nil, title: mission.name)
           rows, cols = @stdout.winsize
+          @audio.play_se(:mission_clear)
           @renderer.render_mission_complete(rows, cols)
           sleep 2
         end
+        @audio.stop_bgm
       end
     ensure
+      @audio.stop_bgm
       @difficulty = nil
     end
 
@@ -151,6 +163,7 @@ module Termfront
       @player.fire_flash = 4
       weapon.consume_ammo!
       @player.last_fire = @player.game_time
+      @audio.play_se(:shoot)
       false
     end
 
@@ -170,6 +183,7 @@ module Termfront
                   events.flat_map { |event| event[:actions] }
                 end
       @input.clear
+      @audio.play_se(:terminal)
       play_actions(actions, title: "Terminal", stdin: stdin)
       @input.clear
     end
@@ -255,6 +269,7 @@ module Termfront
           enemy_klass = Enemy::Base.registry[p.type]
           dmg = enemy_klass ? enemy_klass.allocate.send(:damage) : 10
           @player.apply_damage(dmg)
+          @audio.play_se(:damage)
           true
         else
           false
@@ -263,7 +278,7 @@ module Termfront
 
       relocate_drops_off_terminals
 
-      @player.update_shield(dt, @stdout)
+      @player.update_shield(dt, @stdout, audio: @audio)
     end
 
     def relocate_drops_off_terminals

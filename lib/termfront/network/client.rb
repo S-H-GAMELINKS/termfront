@@ -26,6 +26,7 @@ module Termfront
         @conn = Connection.new
         @input = Input.new
         @renderer = Renderer.new(stdout)
+        @audio = AudioManager.new
       end
 
       def run
@@ -49,6 +50,7 @@ module Termfront
         rescue StandardError => e
           show_error("Error: #{e.message}")
         ensure
+          @audio.close
           @conn.close
         end
       end
@@ -205,6 +207,7 @@ module Termfront
         @player.fire_flash = 4
         weapon.consume_ammo!
         @player.last_fire = @player.game_time
+        @audio.play_se(:shoot)
       end
 
       def handle_messages
@@ -226,6 +229,7 @@ module Termfront
             @opp_lerp_t = 0.0
           when "hit"
             @player.apply_damage(msg[:d] || Config::PVP_HIT_DMG)
+            @audio.play_se(:damage)
           when "dead"
             @opp_dead = true
           end
@@ -270,7 +274,7 @@ module Termfront
         process_fire_pvp if @player.fire_flash == 4
         @player.fire_flash -= 1 if @player.fire_flash > 0
 
-        @player.update_shield(dt, @stdout)
+        @player.update_shield(dt, @stdout, audio: @audio)
 
         return unless @player.dead
 

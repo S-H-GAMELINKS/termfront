@@ -52,15 +52,20 @@ module Termfront
       @dead = true if @health <= 0
     end
 
-    def update_shield(dt, stdout)
+    def update_shield(dt, stdout, audio: nil)
       regen_now = @shield < Config::SHIELD_MAX && (@game_time - @last_damage) >= Config::SHIELD_DELAY
       if regen_now
         unless @regen_active
           @regen_active = true
-          stdout.syswrite("\a")
+          if audio
+            audio.play_loop_se(:shield_regen)
+          else
+            stdout.syswrite("\a")
+          end
         end
         @shield = [@shield + Config::SHIELD_REGEN * dt, Config::SHIELD_MAX].min
       else
+        audio&.stop_loop_se(:shield_regen) if @regen_active
         @regen_active = false
       end
       @damage_flash -= 1 if @damage_flash > 0
@@ -75,7 +80,11 @@ module Termfront
       now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       return unless (now - @last_beep) >= Config::BEEP_INTERVAL
 
-      stdout.syswrite("\a")
+      if audio
+        audio.play_se(:shield_alarm)
+      else
+        stdout.syswrite("\a")
+      end
       @last_beep = now
       @beep_count -= 1
     end
