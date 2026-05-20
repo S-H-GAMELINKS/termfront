@@ -1,39 +1,146 @@
 # Termfront
 
-TODO: Delete this and the text below, and describe your gem
+`Termfront` is a terminal FPS built in Ruby with a raycasting renderer, campaign scripting, audio support, and experimental PvP multiplayer.
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/termfront`. To experiment with that code, run `bin/console` for an interactive prompt.
+## Features
+
+- DDA raycasting renderer for ANSI terminals
+- Singleplayer mission mode
+- Campaign mode with intro/outro scenes and in-mission terminals
+- Experimental PvP over TCP + TLS
+- Radar, pickups, weapons, shields, and enemy projectiles
+- External audio manifest with BGM, SE, and looped shield regeneration audio
+
+## Requirements
+
+- Ruby `>= 3.2`
+- A terminal with ANSI escape sequence support
+- One of these audio players if you want sound:
+  - `ffplay`
+  - `afplay`
+  - `paplay`
+  - `aplay`
+
+RubyGems metadata currently targets Ruby `0.1.0`.
 
 ## Installation
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
-
-Install the gem and add to the application's Gemfile by executing:
+If the gem is published:
 
 ```bash
-bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+gem install termfront
 ```
 
-If bundler is not being used to manage dependencies, install the gem by executing:
+For local development from this repository:
 
 ```bash
-gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+bundle install
+bundle exec rake test
+bundle exec rake install
 ```
 
-## Usage
+## Running
 
-TODO: Write usage instructions here
+Start the game:
+
+```bash
+termfront
+```
+
+Start a PvP server:
+
+```bash
+termfront-server
+```
+
+Use a custom port:
+
+```bash
+termfront-server 9000
+```
+
+Default PvP port is `7777`.
+
+## Controls
+
+- `W` `A` `S` `D`: move
+- `Left` / `Right`: turn
+- `Space`: fire
+- `T`: swap weapon
+- `E`: interact / pick up / use terminal
+- `Q` or `Esc`: quit or back out
+- `Enter`: confirm menus
+
+In story scenes:
+
+- `Enter` / `Space`: next page
+- `Esc` / `Q`: skip scene
+
+## Modes
+
+### Singleplayer
+
+Quick mission start for testing the core combat loop.
+
+### Campaign
+
+Campaign missions include:
+
+- mission start scenes
+- mission complete scenes
+- optional in-mission terminal logs
+
+Story/event data lives in `data/events/*.json`.
+
+### PvP
+
+PvP is currently marked experimental.
+
+- The server listens on TCP and wraps traffic with TLS.
+- The client connects directly to `host:port`.
+- Local relay/start/state/ping behavior is covered by tests.
+- Internet/WAN play still needs broader real-world verification.
+
+For internet testing, the simplest setups are:
+
+- direct TCP port forwarding to the host running `termfront-server`
+- `nginx stream` TCP passthrough on a VPS
+- a mesh/VPN overlay such as Tailscale
+
+## Audio
+
+Audio mappings are defined in:
+
+- [data/audio/manifest.json](data/audio/manifest.json)
+
+Third-party audio notices are tracked here:
+
+- [data/audio/THIRD_PARTY_NOTICES.md](data/audio/THIRD_PARTY_NOTICES.md)
+
+If no supported audio player is available, the game still runs without sound.
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake test` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+Run tests:
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+```bash
+ruby -Itest test/test_termfront.rb
+```
 
-## Contributing
+Build the gem:
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/S-H-GAMELINKS/termfront.
+```bash
+gem build termfront.gemspec
+```
+
+Install the built gem locally:
+
+```bash
+gem install ./termfront-0.1.0.gem
+```
 
 ## License
 
-The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
+Code is available under the [MIT License](LICENSE.txt).
+
+Third-party audio assets remain under their own licenses as documented in [data/audio/THIRD_PARTY_NOTICES.md](data/audio/THIRD_PARTY_NOTICES.md).
