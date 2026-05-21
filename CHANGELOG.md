@@ -17,6 +17,7 @@ Initial public gem release candidate.
 - Story scenes with dialogue and title cards
 - In-mission terminal interactions tied to campaign events
 - Experimental PvP mode over TCP + TLS
+- PvP matchmaking queues for `1v1`, `2v2`, and `4v4`
 - External audio manifest and runtime audio playback
 - Third-party audio notices for bundled CC0 assets
 - Looping shield regeneration audio channel separate from BGM
@@ -27,6 +28,10 @@ Initial public gem release candidate.
 - Added terminal markers to the radar and interaction HUD
 - Reworked campaign story content and terminal logs
 - Replaced placeholder audio mappings with selected CC0 assets for BGM and core SE
+- Reworked PvP client/server flow for team-based matches with ally/enemy sync, elimination handling, and team win detection
+- Updated PvP spawn placement to use walkable map positions and improved diagonal team separation
+- Updated PvP match-size selection to support arrow keys in addition to `J`/`K`
+- Disabled quitting PvP matches with `Q` to avoid accidental exits during combat
 
 ### Notes
 

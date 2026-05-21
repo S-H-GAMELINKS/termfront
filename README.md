@@ -98,6 +98,9 @@ PvP is currently marked experimental.
 
 - The server listens on TCP and wraps traffic with TLS.
 - The client connects directly to `host:port`.
+- Matchmaking now supports `1v1`, `2v2`, and `4v4`.
+- Players choose the match size on the client, and the server keeps separate queues for each mode.
+- Team matches end when one side is fully eliminated.
 - Local relay/start/state/ping behavior is covered by tests.
 - Internet/WAN play still needs broader real-world verification.
 
