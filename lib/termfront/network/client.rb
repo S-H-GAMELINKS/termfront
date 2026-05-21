@@ -336,6 +336,7 @@ module Termfront
         remote[:current].health = msg[:h]
         remote[:current].weapon = msg[:w]&.to_sym
         remote[:current].ammo = msg[:am]
+        spawn_remote_projectile_effect(msg) if (remote[:current].fire_flash || 0) <= 0 && (msg[:ff] || 0) > 0
         remote[:current].fire_flash = msg[:ff] || 0
         remote[:lerp_t] = 0.0
       end
@@ -377,6 +378,7 @@ module Termfront
 
         process_fire_pvp if @player.fire_flash == 4
         @player.fire_flash -= 1 if @player.fire_flash > 0
+        update_projectile_effects(dt)
 
         @player.update_shield(dt, @stdout, audio: @audio)
 
@@ -476,6 +478,7 @@ module Termfront
         render_pvp_hud(buf, cols)
         render_view(buf, view_h, view_w, wtop, wbot, wcol)
         render_remote_players_3d(buf, view_h, view_w, virt_h, dists)
+        render_pvp_projectiles(buf, view_h, view_w, virt_h, dists)
         buf << "\e[#{3 + view_h};1H"
         render_pvp_radar(buf, cols, radar_h)
         render_crosshair(buf, view_h, view_w, cols)
@@ -632,6 +635,64 @@ module Termfront
           ci = c - bar_sx
           color = ci < filled ? fill_color : "80;20;20"
           buf << "\e[#{3 + bar_row};#{c + 1}H\e[38;2;#{color}m\xE2\x96\x88\e[0m"
+        end
+      end
+
+      def render_pvp_projectiles(buf, view_h, view_w, virt_h, dists)
+        dx = Math.cos(@player.angle)
+        dy = Math.sin(@player.angle)
+        px = -dy * Math.tan(Config::FOV / 2.0)
+        py = dx * Math.tan(Config::FOV / 2.0)
+        inv = 1.0 / (px * dy - py * dx)
+
+        sprites = []
+        @projectiles.each do |projectile|
+          ex = projectile[:x] - @player.x
+          ey = projectile[:y] - @player.y
+          tx = inv * (dy * ex - dx * ey)
+          tz = inv * (-py * ex + px * ey)
+          next if tz < 0.2
+
+          sprites << [tz, tx, projectile]
+        end
+        sprites.sort_by! { |sprite| -sprite[0] }
+
+        sprites.each do |tz, tx, projectile|
+          sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
+          pw = (4.0 / tz).ceil.clamp(1, 5)
+          ph = (virt_h / tz * 0.15).ceil.clamp(2, 6)
+          vmid = virt_h / 2
+          draw_top = [(vmid - ph / 2), 0].max
+          draw_bot = [(vmid + ph / 2).clamp(draw_top + 2, virt_h), virt_h].min
+          start_x = [sx - pw / 2, 0].max
+          end_x = [sx + pw / 2, view_w - 1].min
+
+          start_x.upto(end_x) do |c|
+            next if c < 0 || c >= view_w
+            next if dists[c] < tz
+
+            r_top = (draw_top / 2.0).ceil
+            r_bot = [(draw_bot / 2.0).floor, r_top + 1].max
+            r_top.upto(r_bot - 1) do |r|
+              next if r < 0 || r >= view_h
+
+              vp0 = r * 2
+              vp1 = r * 2 + 1
+              top_in = vp0 >= draw_top && vp0 < draw_bot
+              bot_in = vp1 >= draw_top && vp1 < draw_bot
+              next unless top_in || bot_in
+
+              proj_color = projectile[:color]
+              buf << "\e[#{3 + r};#{c + 1}H"
+              buf << if top_in && bot_in
+                       "\e[38;2;#{proj_color}m\xE2\x96\x88\e[0m"
+                     elsif top_in
+                       "\e[38;2;#{proj_color}m\xE2\x96\x80\e[0m"
+                     else
+                       "\e[38;2;#{proj_color}m\xE2\x96\x84\e[0m"
+                     end
+            end
+          end
         end
       end
 
@@ -820,6 +881,30 @@ module Termfront
         buf << TerminalOutput.end_frame
         TerminalOutput.write_all(@stdout, buf)
         STDIN.raw { |s| s.getc }
+      end
+
+      def spawn_remote_projectile_effect(msg)
+        shock = msg[:w].to_s.start_with?("shock")
+        color = shock ? "80;220;255" : "255;210;80"
+        speed = shock ? 18.0 : 14.0
+        angle = msg[:a]
+        @projectiles << {
+          x: msg[:x],
+          y: msg[:y],
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          ttl: 0.18,
+          color: color
+        }
+      end
+
+      def update_projectile_effects(dt)
+        @projectiles.reject! do |projectile|
+          projectile[:x] += projectile[:vx] * dt
+          projectile[:y] += projectile[:vy] * dt
+          projectile[:ttl] -= dt
+          projectile[:ttl] <= 0 || @map.wall_at?(projectile[:x], projectile[:y])
+        end
       end
 
       def notify_death_if_needed

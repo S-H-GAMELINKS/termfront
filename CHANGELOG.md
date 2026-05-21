@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Changed
+
+- Added visible remote shot tracer effects during PvP and Wavesfight multiplayer matches
+
 ## [0.1.1] - 2026-05-21
 
 ### Changed
