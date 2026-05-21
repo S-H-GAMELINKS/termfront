@@ -22,7 +22,7 @@
   - `paplay`
   - `aplay`
 
-RubyGems metadata currently targets Ruby `0.1.0`.
+RubyGems metadata currently targets Ruby `0.1.1`.
 
 ## Installation
 
@@ -153,7 +153,7 @@ gem build termfront.gemspec
 Install the built gem locally:
 
 ```bash
-gem install ./termfront-0.1.0.gem
+gem install ./termfront-0.1.1.gem
 ```
 
 ## License

@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-21
+
 ### Changed
 
 - Changed the default multiplayer server address to `termfront.gamelinks007.net:443`
