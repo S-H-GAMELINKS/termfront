@@ -6,7 +6,7 @@ module Termfront
       @stdout = stdout
     end
 
-    def render(player:, map:, enemies:, projectiles:, drops:, terminals: [])
+    def render(player:, map:, enemies:, projectiles:, drops:, terminals: [], status_line: nil, allies: [])
       rows, cols = @stdout.winsize
       rows = [rows, 6].max
       cols = [cols, 20].max
@@ -41,14 +41,15 @@ module Termfront
       end
       pixels = build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
       overlay_enemies_3d(pixels, view_h, view_w, dists, player, enemies, projectiles, drops)
+      overlay_allies_3d(pixels, view_h, view_w, dists, player, allies)
       overlay_damage_flash(pixels, view_h, view_w, player)
 
       buf = TerminalOutput.begin_frame(home: true)
 
-      render_hud(buf, cols, player, drops, terminals)
+      render_hud(buf, cols, player, drops, terminals, status_line)
       render_view(buf, view_h, view_w, pixels)
       buf << "\e[#{3 + view_h};1H"
-      render_radar(buf, cols, radar_h, player, enemies, drops, terminals)
+      render_radar(buf, cols, radar_h, player, enemies, drops, terminals, allies)
       render_crosshair(buf, view_h, view_w, cols, player)
 
       buf << TerminalOutput.end_frame
@@ -131,7 +132,7 @@ module Termfront
 
     private
 
-    def render_hud(buf, cols, player, drops, terminals)
+    def render_hud(buf, cols, player, drops, terminals, status_line)
       bar_w = [cols - 20, 10].max
       pct = player.shield / Config::SHIELD_MAX.to_f
       filled = (pct * bar_w).to_i
@@ -145,6 +146,7 @@ module Termfront
               end
       pct_s = "#{(pct * 100).to_i}%"
       shield_str = "SHIELD #{color}#{"█" * filled}#{"░" * empty}\e[0m #{pct_s}"
+      shield_str = "#{shield_str}\e[90m#{status_line}\e[0m" if status_line
       pad = [(cols - bar_w - 15) / 2, 0].max
       buf << TerminalOutput.fit_ansi("#{" " * pad}#{shield_str}", cols) << "\r\n"
 
@@ -236,7 +238,7 @@ module Termfront
       end
     end
 
-    def render_radar(buf, cols, radar_h, player, enemies, drops, terminals)
+    def render_radar(buf, cols, radar_h, player, enemies, drops, terminals, allies = [])
       buf << ("\xE2\x94\x80" * cols)[0, cols * 3] << "\r\n"
 
       r = Config::RADAR_RADIUS
@@ -318,6 +320,25 @@ module Termfront
         terminal_cells[[sy, sx]] = terminal
       end
 
+      ally_cells = {}
+      allies.each do |ally|
+        ex = ally.x - player.x
+        ey = ally.y - player.y
+        dist = Math.sqrt(ex * ex + ey * ey)
+        next if dist > Config::RADAR_RANGE
+
+        rx = -(ex * cos_a - ey * sin_a)
+        ry = -(ex * sin_a + ey * cos_a)
+        sx = r + (rx / Config::RADAR_RANGE * r).round
+        sy = r + (ry / Config::RADAR_RANGE * r).round
+        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+
+        d2 = (sx - r)**2 + (sy - r)**2
+        next if d2 > r * r
+
+        ally_cells[[sy, sx]] = true
+      end
+
       alive_count = enemies.count(&:alive)
       total_count = enemies.size
       info_lines = [
@@ -334,6 +355,8 @@ module Termfront
             if (etype = enemy_cells[[row, cx]])
               ec = etype == :executor ? "\e[95m" : "\e[91m"
               line << "#{ec}*\e[0m"
+            elsif ally_cells[[row, cx]]
+              line << "\e[96m+\e[0m"
             elsif (drop = drop_cells[[row, cx]])
               dc = drop.type.to_s.start_with?("shock") ? "\e[96m" : "\e[93m"
               dl = Weapon::Base.registry[drop.type].new.name[0]
@@ -535,6 +558,94 @@ module Termfront
             pixels[vp0][c] = proj_color if top_in
             pixels[vp1][c] = proj_color if bot_in
           end
+        end
+      end
+    end
+
+    def overlay_allies_3d(pixels, view_h, view_w, dists, player, allies)
+      dx = Math.cos(player.angle)
+      dy = Math.sin(player.angle)
+      px = -dy * Math.tan(Config::FOV / 2.0)
+      py = dx * Math.tan(Config::FOV / 2.0)
+      virt_h = view_h * 2
+      inv = 1.0 / (px * dy - py * dx)
+
+      sprites = []
+      allies.each do |ally|
+        ex = ally.x - player.x
+        ey = ally.y - player.y
+        tx = inv * (dy * ex - dx * ey)
+        tz = inv * (-py * ex + px * ey)
+        next if tz < 0.2
+
+        sprites << [tz, tx, ally]
+      end
+      sprites.sort_by! { |s| -s[0] }
+
+      sprites.each do |tz, tx, ally|
+        sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
+        sprite_h = (virt_h / tz).to_i
+        draw_top = [(virt_h / 2 - sprite_h / 2), 0].max
+        draw_bot = [(virt_h / 2 + sprite_h / 2), virt_h].min
+        sprite_w = (sprite_h / 2.0).to_i
+        start_x = [sx - sprite_w / 2, 0].max
+        end_x   = [sx + sprite_w / 2, view_w - 1].min
+
+        actual_h = draw_bot - draw_top
+        actual_w = end_x - start_x + 1
+        next if actual_h < 1 || actual_w < 1
+
+        use_shape = actual_h >= 6
+
+        start_x.upto(end_x) do |c|
+          next if c < 0 || c >= view_w
+          next if dists[c] < tz
+
+          nx = (c - start_x).to_f / actual_w
+          r_top = (draw_top / 2.0).ceil
+          r_bot = (draw_bot / 2.0).floor
+
+          r_top.upto(r_bot - 1) do |r|
+            vp0 = r * 2
+            vp1 = r * 2 + 1
+            top_in = vp0 >= draw_top && vp0 < draw_bot
+            bot_in = vp1 >= draw_top && vp1 < draw_bot
+            next unless top_in || bot_in
+
+            if use_shape
+              ny0 = top_in ? (vp0 - draw_top).to_f / actual_h : nil
+              ny1 = bot_in ? (vp1 - draw_top).to_f / actual_h : nil
+              top_color = ny0 ? Sprite.player(nx, ny0) : nil
+              bot_color = ny1 ? Sprite.player(nx, ny1) : nil
+              next unless top_color || bot_color
+
+              pixels[vp0][c] = top_color if top_color
+              pixels[vp1][c] = bot_color if bot_color
+            else
+              pixels[vp0][c] = "70;210;255" if top_in
+              pixels[vp1][c] = "70;210;255" if bot_in
+            end
+          end
+        end
+
+        bar_row = (draw_top / 2.0).ceil - 1
+        next unless bar_row >= 0 && bar_row < view_h
+
+        bar_w = [actual_w, 2].max
+        bar_sx = [sx - bar_w / 2, 0].max
+        bar_ex = [bar_sx + bar_w - 1, view_w - 1].min
+        total = ally.shield + ally.health
+        max_total = Config::SHIELD_MAX + Config::HEALTH_MAX
+        hp_pct = total.to_f / max_total
+        filled = (hp_pct * (bar_ex - bar_sx + 1)).ceil
+        bar_sx.upto(bar_ex) do |c|
+          next if c < 0 || c >= view_w
+          next if dists[c] < tz
+
+          ci = c - bar_sx
+          color = ci < filled ? "0;180;255" : "80;20;20"
+          pixels[bar_row * 2][c] = color
+          pixels[bar_row * 2 + 1][c] = color
         end
       end
     end

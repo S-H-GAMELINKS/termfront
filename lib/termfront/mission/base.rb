@@ -64,8 +64,16 @@ module Termfront
           @campaign ||= []
         end
 
+        def wavesfight
+          @wavesfight ||= []
+        end
+
         def register(klass)
           campaign << klass
+        end
+
+        def register_wavesfight(klass)
+          wavesfight << klass
         end
       end
     end

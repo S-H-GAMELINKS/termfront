@@ -39,5 +39,6 @@ module Termfront
     end
 
     Base.register(FinalPush)
+    Base.register_wavesfight(FinalPush)
   end
 end

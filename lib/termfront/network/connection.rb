@@ -23,6 +23,7 @@ module Termfront
         ctx = OpenSSL::SSL::SSLContext.new
         ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
         @sock = OpenSSL::SSL::SSLSocket.new(tcp, ctx)
+        @sock.hostname = host if @sock.respond_to?(:hostname=)
         @sock.sync = true
         @sock.connect
       end

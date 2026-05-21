@@ -35,6 +35,7 @@ module Termfront
               ch = stdin.read_nonblock(64)
               ch.each_byte do |b|
                 case b
+                when 102, 70  then return :wavesfight
                 when 115, 83  then return :singleplayer
                 when 99, 67   then return :campaign
                 when 112, 80  then return :pvp
@@ -278,7 +279,7 @@ module Termfront
       lines[title_row] = TerminalOutput.fit_ansi("#{" " * (sc - 1)}\e[38;2;80;80;120m#{sub}\e[0m", cols)
 
       # Menu items
-      items = ["[P] PvP", "[C] Campaign", "[S] Training", "[Q] Quit"]
+      items = ["[P] PvP", "[F] Wavesfight", "[C] Campaign", "[S] Training", "[Q] Quit"]
       items_count_for_menu = items.size
       menu_row = [[title_row + 2, rows - items_count_for_menu].min, 1].max
       items.each_with_index do |item, i|
