@@ -31,6 +31,7 @@ module Termfront
     RADAR_RANGE  = 12.0
 
     PVP_PORT    = 7777
+    PVP_DEFAULT_ADDRESS = "termfront.gamelinks007.net:443"
     PVP_HIT_DMG = 10
 
     DEMO_SPEED = 0.008
