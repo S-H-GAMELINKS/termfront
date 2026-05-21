@@ -39,6 +39,7 @@ module Termfront
         @port = port
         @queue_mutex = Mutex.new
         @queues = TEAM_SIZES.to_h { |team_size| [team_size, []] }
+        @wavesfight_queues = Hash.new { |hash, key| hash[key] = [] }
       end
 
       def run
@@ -78,8 +79,8 @@ module Termfront
       end
 
       def enqueue_player(client)
-        team_size = read_queue_request(client)
-        unless team_size
+        request = read_queue_request(client)
+        unless request
           client.close
           return
         end
@@ -88,6 +89,14 @@ module Termfront
         rescue StandardError
           "unknown"
         end
+        if request[:mode] == :wavesfight
+          enqueue_wavesfight_player(client, peer, request)
+        else
+          enqueue_pvp_player(client, peer, request[:team_size])
+        end
+      end
+
+      def enqueue_pvp_player(client, peer, team_size)
         puts "Player connected from #{peer}, queued for #{team_size}v#{team_size}"
 
         match_players = nil
@@ -104,6 +113,27 @@ module Termfront
         return unless match_players
 
         Thread.new { run_match(team_size, match_players) }
+      end
+
+      def enqueue_wavesfight_player(client, peer, request)
+        mission_id = request[:mission_id]
+        difficulty = request[:difficulty]
+        key = [mission_id, difficulty]
+        puts "Player connected from #{peer}, queued for wavesfight #{mission_id} diff=#{difficulty}"
+
+        match_players = nil
+        @queue_mutex.synchronize do
+          @wavesfight_queues[key] << { socket: client, peer: peer }
+          if @wavesfight_queues[key].size >= 2
+            match_players = @wavesfight_queues[key].shift(2)
+          else
+            waiting = @wavesfight_queues[key].size
+            puts "Queue wavesfight #{mission_id}: #{waiting}/2"
+          end
+        end
+        return unless match_players
+
+        Thread.new { run_wavesfight_match(mission_id, difficulty, match_players) }
       end
 
       def read_queue_request(client)
@@ -129,12 +159,20 @@ module Termfront
             end
             next unless msg[:t] == "queue"
 
+            if msg[:mode].to_s == "wavesfight"
+              return {
+                mode: :wavesfight,
+                mission_id: msg[:mission_id].to_s,
+                difficulty: [[msg[:difficulty].to_i, 0].max, Enemy::Base::DIFFICULTIES.size - 1].min
+              }
+            end
+
             team_size = msg[:team_size].to_i
-            return TEAM_SIZES.include?(team_size) ? team_size : 1
+            return { mode: :pvp, team_size: TEAM_SIZES.include?(team_size) ? team_size : 1 }
           end
         end
 
-        1
+        { mode: :pvp, team_size: 1 }
       rescue EOFError, Errno::ECONNRESET, Errno::EPIPE, IOError, OpenSSL::SSL::SSLError
         nil
       end
@@ -267,6 +305,273 @@ module Termfront
         rescue StandardError
           nil
         end
+      end
+
+      def run_wavesfight_match(mission_id, difficulty, players)
+        mission_klass = Mission::Base.wavesfight.find { |klass| klass.new.id == mission_id }
+        unless mission_klass
+          players.each { |player| player[:socket].close rescue nil }
+          return
+        end
+
+        mission = mission_klass.new
+        map = mission.build_map
+        spawns = wavesfight_spawns(map, mission.spawn)
+        roster = players.each_with_index.map do |entry, idx|
+          spawn = spawns[idx]
+          {
+            id: idx,
+            socket: entry[:socket],
+            peer: entry[:peer],
+            buf: +"",
+            x: spawn[0],
+            y: spawn[1],
+            angle: spawn[2],
+            shield: Config::SHIELD_MAX,
+            health: Config::HEALTH_MAX,
+            weapon: :ar,
+            ammo: 60,
+            fire_flash: 0,
+            alive: true
+          }
+        end
+
+        session = {
+          mission: mission,
+          map: map,
+          difficulty: difficulty,
+          wave: 0,
+          enemies: [],
+          projectiles: [],
+          clock: Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        }
+        start_wavesfight_wave(session)
+
+        roster.each do |player|
+          send_json(player[:socket], {
+                      t: "wavesfight_start",
+                      id: player[:id],
+                      map: mission.map_data,
+                      mission: mission.name,
+                      players: roster.map { |entry| { id: entry[:id], spawn: [entry[:x], entry[:y], entry[:angle]] } }
+                    })
+        end
+
+        last_broadcast = session[:clock]
+        loop do
+          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          dt = now - session[:clock]
+          session[:clock] = now
+
+          sockets = roster.filter_map do |player|
+            sock = player[:socket]
+            sock unless sock.closed?
+          rescue IOError
+            nil
+          end
+          break if sockets.empty?
+
+          readable, = IO.select(sockets, nil, nil, 0.01)
+          if readable
+            readable.each do |sock|
+              player = roster.find { |entry| entry[:socket] == sock }
+              next unless player
+
+              begin
+                player[:buf] << sock.read_nonblock(4096)
+                consume_wavesfight_messages(roster, session, player)
+              rescue IO::WaitReadable
+                next
+              rescue EOFError, Errno::ECONNRESET, Errno::EPIPE, IOError, OpenSSL::SSL::SSLError
+                broadcast(roster, { t: "match_end", reason: "disconnect", player_id: player[:id] }, except: player[:id])
+                close_players(roster)
+                return
+              end
+            end
+          end
+
+          update_wavesfight_session(roster, session, dt)
+          if all_wavesfight_players_dead?(roster)
+            broadcast(roster, { t: "match_end", reason: "defeat", wave: session[:wave] })
+            close_players(roster)
+            return
+          end
+
+          if now - last_broadcast >= 1.0 / 15.0
+            broadcast_wavesfight_world(roster, session)
+            last_broadcast = now
+          end
+        end
+      end
+
+      def consume_wavesfight_messages(roster, session, player)
+        while (nl = player[:buf].index("\n"))
+          line = player[:buf].slice!(0, nl + 1)
+          begin
+            msg = JSON.parse(line, symbolize_names: true)
+          rescue JSON::ParserError
+            next
+          end
+
+          case msg[:t]
+          when "ping"
+            send_json(player[:socket], { t: "pong", ts: msg[:ts] })
+          when "state"
+            player[:x] = msg[:x]
+            player[:y] = msg[:y]
+            player[:angle] = msg[:a]
+            player[:weapon] = msg[:w]&.to_sym || player[:weapon]
+            player[:ammo] = msg[:am] if msg.key?(:am)
+            player[:fire_flash] = msg[:ff] || 0
+          when "fire"
+            player[:fire_flash] = 4
+            process_wavesfight_fire(session, player)
+          end
+        end
+      end
+
+      def update_wavesfight_session(roster, session, dt)
+        roster.each do |player|
+          player[:fire_flash] -= 1 if player[:fire_flash].to_i > 0
+        end
+
+        session[:enemies].each do |enemy|
+          next unless enemy.alive
+
+          target = roster.select { |player| player[:alive] }
+                         .min_by { |player| (player[:x] - enemy.x)**2 + (player[:y] - enemy.y)**2 }
+          next unless target
+
+          enemy.update(dt, Struct.new(:x, :y).new(target[:x], target[:y]), session[:projectiles], session[:map],
+                       session[:clock], difficulty: session[:difficulty])
+        end
+
+        session[:projectiles].reject! do |projectile|
+          projectile.update(dt)
+          if projectile.hit_wall?(session[:map])
+            true
+          else
+            target = roster.find { |player| player[:alive] && projectile.hit_player?(player[:x], player[:y]) }
+            if target
+              dmg = enemy_damage(projectile.type)
+              apply_wavesfight_damage(target, dmg)
+              send_json(target[:socket], { t: "hit", d: dmg })
+              true
+            else
+              false
+            end
+          end
+        end
+
+        if session[:enemies].all? { |enemy| !enemy.alive }
+          start_wavesfight_wave(session)
+          broadcast(roster, { t: "wave_start", wave: session[:wave], difficulty: session[:difficulty] })
+        end
+      end
+
+      def process_wavesfight_fire(session, player)
+        weapon = Weapon::Base.build(player[:weapon] || :ar, player[:ammo])
+        dx = Math.cos(player[:angle])
+        dy = Math.sin(player[:angle])
+        best = nil
+        best_dot = Float::INFINITY
+
+        session[:enemies].each do |enemy|
+          next unless enemy.alive
+
+          ox = enemy.x - player[:x]
+          oy = enemy.y - player[:y]
+          dot = ox * dx + oy * dy
+          next if dot < 0.1
+
+          perp = (ox * (-dy) + oy * dx).abs
+          next if perp > weapon.hit_width
+          next unless session[:map].line_of_sight?(player[:x], player[:y], enemy.x, enemy.y)
+          next unless dot < best_dot
+
+          best = enemy
+          best_dot = dot
+        end
+        return unless best
+
+        best.take_damage(1)
+      end
+
+      def enemy_damage(type)
+        enemy_klass = Enemy::Base.registry[type]
+        enemy_klass ? enemy_klass.allocate.send(:damage) : 10
+      end
+
+      def apply_wavesfight_damage(player, amount)
+        if player[:shield] > 0
+          overflow = amount - player[:shield]
+          player[:shield] = [player[:shield] - amount, 0].max
+          player[:health] = [player[:health] - [overflow, 0].max, 0].max if player[:shield] == 0
+        else
+          player[:health] = [player[:health] - amount, 0].max
+        end
+
+        player[:alive] = false if player[:health] <= 0
+      end
+
+      def all_wavesfight_players_dead?(roster)
+        roster.none? { |player| player[:alive] }
+      end
+
+      def broadcast_wavesfight_world(roster, session)
+        msg = {
+          t: "world",
+          wave: session[:wave],
+          difficulty: session[:difficulty],
+          players: roster.map do |player|
+            {
+              id: player[:id], x: player[:x], y: player[:y], a: player[:angle],
+              s: player[:shield], h: player[:health], w: player[:weapon], am: player[:ammo],
+              ff: player[:fire_flash], alive: player[:alive]
+            }
+          end,
+          enemies: session[:enemies].map do |enemy|
+            {
+              id: enemy.object_id, x: enemy.x, y: enemy.y, type: enemy.sprite_id,
+              hp: enemy.hp, max_hp: enemy.max_hp, alive: enemy.alive
+            }
+          end,
+          projectiles: session[:projectiles].map { |projectile| { x: projectile.x, y: projectile.y, type: projectile.type } },
+          drops: []
+        }
+        broadcast(roster, msg)
+      end
+
+      def start_wavesfight_wave(session)
+        session[:wave] += 1
+        session[:difficulty] = [session[:difficulty], 1 + ((session[:wave] - 1) / 3)].max
+        session[:difficulty] = [session[:difficulty], Enemy::Base::DIFFICULTIES.size - 1].min
+        session[:enemies] = build_wavesfight_enemies(session[:mission], session[:wave], session[:difficulty])
+        session[:projectiles].clear
+      end
+
+      def build_wavesfight_enemies(mission, wave, difficulty_index)
+        enemies = mission.build_enemies(difficulty_index)
+        bonus_count = (wave - 1) * 2
+        enemies + Enemy::Base.generate_extras(mission.enemy_defs, bonus_count, difficulty_index)
+      end
+
+      def wavesfight_spawns(map, spawn)
+        x, y, angle = spawn
+        spawns = [[x, y, angle]]
+        offsets = [
+          [1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0],
+          [1.0, 1.0], [1.0, -1.0], [-1.0, 1.0], [-1.0, -1.0]
+        ]
+        offsets.each do |dx, dy|
+          nx = x + dx
+          ny = y + dy
+          next if map.blocked?(nx, ny)
+
+          spawns << [nx, ny, angle]
+          break
+        end
+        spawns
       end
 
       def generate_self_signed_cert

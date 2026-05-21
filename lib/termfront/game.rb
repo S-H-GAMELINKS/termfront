@@ -23,6 +23,7 @@ module Termfront
         @audio.stop_bgm
         case choice
         when :singleplayer then run_singleplayer
+        when :wavesfight   then run_wavesfight
         when :campaign     then run_campaign
         when :pvp          then Network::Client.new(@stdout).run
         when :quit         then break
@@ -55,7 +56,7 @@ module Termfront
     def run_campaign
       @difficulty = 1
       loop do
-        choice = show_mission_select
+        choice = show_mission_select(missions: Mission::Base.campaign, title: "SELECT MISSION")
         if choice == :back
           clear_screen
           return
@@ -79,6 +80,38 @@ module Termfront
     ensure
       @audio.stop_bgm
       @difficulty = nil
+    end
+
+    def run_wavesfight
+      @difficulty = 1
+      missions = Mission::Base.wavesfight
+      choice = show_mission_select(missions: missions, title: "SELECT WAVESFIGHT")
+      if choice == :back
+        clear_screen
+        return
+      end
+
+      mission = missions[choice].new
+      mode = show_wavesfight_mode_select
+      if mode == :back
+        clear_screen
+        return
+      end
+
+      if mode == :coop
+        Network::WavesfightClient.new(@stdout).run(mission_id: mission.id, difficulty: @difficulty)
+        return
+      end
+
+      load_mission(mission, @difficulty)
+      @audio.play_bgm(:mission)
+      @wave = 0
+      start_wavesfight_wave
+      run_wavesfight_loop
+    ensure
+      @audio.stop_bgm
+      @difficulty = nil
+      @wave = nil
     end
 
     def load_mission(mission, difficulty_index)
@@ -132,6 +165,49 @@ module Termfront
               sleep 2
             end
             return :mission_complete
+          end
+
+          cap_frame(now)
+        end
+      end
+    end
+
+    def run_wavesfight_loop
+      STDIN.raw do |stdin|
+        last_time = clock
+
+        loop do
+          now = clock
+          dt = now - last_time
+          last_time = now
+
+          keys = @input.process(stdin, player: @player)
+          return :quit if @input.key?(:q) || @input.key?(:esc)
+
+          if handle_player_actions(keys, stdin)
+            last_time = clock
+            next
+          end
+
+          update(dt)
+          @renderer.render(
+            player: @player, map: @map,
+            enemies: @enemies, projectiles: @projectiles,
+            drops: @player.drops, terminals: @terminals,
+            status_line: "  WAVE #{@wave}  #{Enemy::Base::DIFFICULTIES[@difficulty][:name]}"
+          )
+
+          if @player.dead
+            rows, cols = @stdout.winsize
+            @renderer.render_centered_message(rows, cols, "DOWN AT WAVE #{@wave}", "\e[1;91m")
+            sleep 2
+            return :dead
+          end
+
+          if @enemies.all? { |e| !e.alive }
+            show_wave_clear
+            start_wavesfight_wave
+            last_time = clock
           end
 
           cap_frame(now)
@@ -318,15 +394,116 @@ module Termfront
       ax.floor == bx.floor && ay.floor == by.floor
     end
 
-    def show_mission_select
+    def start_wavesfight_wave
+      @wave += 1
+      @difficulty = [1 + ((@wave - 1) / 3), Enemy::Base::DIFFICULTIES.size - 1].min
+      @enemies = build_wavesfight_enemies(@wave, @difficulty)
+      replenish_wavesfight_loadout
+      @projectiles.clear
+
+      rows, cols = @stdout.winsize
+      @renderer.render_centered_message(rows, cols, "WAVE #{@wave}", "\e[1;93m")
+      sleep 1
+    end
+
+    def build_wavesfight_enemies(wave, difficulty_index)
+      enemies = @mission.build_enemies(difficulty_index)
+      bonus_count = (wave - 1) * 2
+      enemies + Enemy::Base.generate_extras(@mission.enemy_defs, bonus_count, difficulty_index)
+    end
+
+    def replenish_wavesfight_loadout
+      @player.shield = [@player.shield + 35.0, Config::SHIELD_MAX].min
+      @player.health = [@player.health + 20.0, Config::HEALTH_MAX].min
+      @player.last_damage = -Config::SHIELD_DELAY
+      @player.dead = false
+
+      @player.weapons.each do |weapon|
+        next unless weapon.max_ammo
+
+        refill = [weapon.max_ammo / 2, 1].max
+        weapon.ammo = [weapon.ammo + refill, weapon.max_ammo].min
+      end
+    end
+
+    def show_wave_clear
+      rows, cols = @stdout.winsize
+      @renderer.render_centered_message(rows, cols, "WAVE #{@wave} CLEAR", "\e[1;92m")
+      sleep 1
+    end
+
+    def show_wavesfight_mode_select
       selected = 0
-      missions = Mission::Base.campaign
+      options = [
+        ["SOLO", "Play local wavesfight"],
+        ["CO-OP", "Queue for 2-player online co-op"]
+      ]
+
+      STDIN.raw do |stdin|
+        loop do
+          rows, cols = @stdout.winsize
+          buf = TerminalOutput.begin_frame(home: true, clear: true)
+          lines = Array.new(rows) { " " * cols }
+          title = "WAVESFIGHT MODE"
+          tc = [(cols - title.size) / 2 + 1, 1].max
+          lines[2] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{title}\e[0m", cols)
+
+          options.each_with_index do |(label, desc), idx|
+            row = 6 + idx * 3
+            text = idx == selected ? "\e[1;97;44m  #{label.ljust(10)}  \e[0m" : "\e[97m  #{label.ljust(10)}  \e[0m"
+            tc = [(cols - 14) / 2 + 1, 1].max
+            dc = [(cols - desc.size) / 2 + 1, 1].max
+            lines[row - 1] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}#{text}", cols)
+            lines[row] = TerminalOutput.fit_ansi("#{" " * (dc - 1)}\e[38;2;160;160;180m#{desc}\e[0m", cols)
+          end
+
+          hint = "Up/Down: Select   Enter: Confirm   Q/Esc: Back"
+          hc = [(cols - hint.size) / 2 + 1, 1].max
+          lines[rows - 3] = TerminalOutput.fit_ansi("#{" " * (hc - 1)}\e[38;2;100;100;120m#{hint}\e[0m", cols)
+
+          lines.each_with_index do |line, index|
+            buf << line
+            buf << "\r\n" if index < rows - 1
+          end
+          buf << TerminalOutput.end_frame
+          TerminalOutput.write_all(@stdout, buf)
+
+          next unless IO.select([stdin], nil, nil, Config::FRAME_DT)
+
+          begin
+            ch = stdin.read_nonblock(64)
+            i = 0
+            while i < ch.bytesize
+              b = ch.getbyte(i)
+              if b == 27 && ch.getbyte(i + 1) == 91
+                code = ch.getbyte(i + 2)
+                case code
+                when 65 then selected = (selected - 1) % options.size
+                when 66 then selected = (selected + 1) % options.size
+                end
+                i += 3
+              elsif [13, 10].include?(b)
+                return selected.zero? ? :solo : :coop
+              elsif [113, 81, 27].include?(b)
+                return :back
+              else
+                i += 1
+              end
+            end
+          rescue IO::WaitReadable
+          end
+        end
+      end
+    end
+
+    def show_mission_select(missions:, title:)
+      selected = 0
       TerminalOutput.write_all(@stdout, TerminalOutput.begin_frame(home: true, clear: true) + TerminalOutput.end_frame)
 
       STDIN.raw do |stdin|
         loop do
           now = clock
-          render_mission_select(selected, missions)
+          render_mission_select(selected, missions, title)
 
           while IO.select([stdin], nil, nil, 0)
             begin
@@ -365,12 +542,11 @@ module Termfront
       end
     end
 
-    def render_mission_select(selected, missions)
+    def render_mission_select(selected, missions, title)
       rows, cols = @stdout.winsize
       buf = TerminalOutput.begin_frame(home: true)
       lines = Array.new(rows) { " " * cols }
 
-      title = "SELECT MISSION"
       tc = [(cols - title.size) / 2 + 1, 1].max
       lines[1] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{title}\e[0m", cols)
 

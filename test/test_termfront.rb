@@ -61,6 +61,14 @@ class TestTermfront < Minitest::Test
     assert_equal :service_hub, terminals.first[:id]
   end
 
+  def test_wavesfight_missions_are_registered
+    wavesfight = Termfront::Mission::Base.wavesfight
+
+    assert_includes wavesfight, Termfront::Mission::CorridorSweep
+    assert_includes wavesfight, Termfront::Mission::Stronghold
+    assert_includes wavesfight, Termfront::Mission::FinalPush
+  end
+
   def test_event_runtime_matches_trigger_payload_once
     events = [
       {

@@ -40,5 +40,6 @@ module Termfront
     end
 
     Base.register(Stronghold)
+    Base.register_wavesfight(Stronghold)
   end
 end

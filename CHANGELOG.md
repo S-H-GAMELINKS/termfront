@@ -18,6 +18,7 @@ Initial public gem release candidate.
 - In-mission terminal interactions tied to campaign events
 - Experimental PvP mode over TCP + TLS
 - PvP matchmaking queues for `1v1`, `2v2`, and `4v4`
+- Wavesfight PvE mode with stage selection, wave-based survival, and optional 2-player co-op
 - External audio manifest and runtime audio playback
 - Third-party audio notices for bundled CC0 assets
 - Looping shield regeneration audio channel separate from BGM
@@ -32,6 +33,7 @@ Initial public gem release candidate.
 - Updated PvP spawn placement to use walkable map positions and improved diagonal team separation
 - Updated PvP match-size selection to support arrow keys in addition to `J`/`K`
 - Disabled quitting PvP matches with `Q` to avoid accidental exits during combat
+- Added Wavesfight arena registration for `Corridor Sweep`, `Stronghold`, and `Final Push`
 
 ### Notes
 

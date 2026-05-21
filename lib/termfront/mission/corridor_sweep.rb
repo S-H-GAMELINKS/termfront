@@ -36,5 +36,6 @@ module Termfront
     end
 
     Base.register(CorridorSweep)
+    Base.register_wavesfight(CorridorSweep)
   end
 end

@@ -6,6 +6,7 @@
 
 - DDA raycasting renderer for ANSI terminals
 - Singleplayer mission mode
+- Wavesfight PvE mode with wave-based survival arenas
 - Campaign mode with intro/outro scenes and in-mission terminals
 - Experimental PvP over TCP + TLS
 - Radar, pickups, weapons, shields, and enemy projectiles
@@ -91,6 +92,16 @@ Campaign missions include:
 - optional in-mission terminal logs
 
 Story/event data lives in `data/events/*.json`.
+
+### Wavesfight
+
+Wavesfight is a PvE survival mode built on selected campaign maps.
+
+- Select from `Corridor Sweep`, `Stronghold`, and `Final Push`
+- Survive escalating enemy waves
+- Difficulty ramps up every few waves
+- Shield, health, and ammo get a partial refresh between waves
+- Supports both solo play and 2-player online co-op
 
 ### PvP
 
