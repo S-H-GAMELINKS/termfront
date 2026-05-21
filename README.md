@@ -62,6 +62,8 @@ termfront-server 9000
 
 Default PvP port is `7777`.
 
+The default multiplayer client address is `termfront.gamelinks007.net:443`.
+
 ## Controls
 
 - `W` `A` `S` `D`: move
@@ -109,6 +111,7 @@ PvP is currently marked experimental.
 
 - The server listens on TCP and wraps traffic with TLS.
 - The client connects directly to `host:port`.
+- The default multiplayer endpoint is `termfront.gamelinks007.net:443`.
 - Matchmaking now supports `1v1`, `2v2`, and `4v4`.
 - Players choose the match size on the client, and the server keeps separate queues for each mode.
 - Team matches end when one side is fully eliminated.

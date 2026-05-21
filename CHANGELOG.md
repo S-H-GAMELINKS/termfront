@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning as it stabilizes.
 
+## [Unreleased]
+
+### Changed
+
+- Changed the default multiplayer server address to `termfront.gamelinks007.net:443`
+
 ## [0.1.0] - 2026-05-20
 
 Initial public gem release candidate.
@@ -34,6 +40,7 @@ Initial public gem release candidate.
 - Updated PvP match-size selection to support arrow keys in addition to `J`/`K`
 - Disabled quitting PvP matches with `Q` to avoid accidental exits during combat
 - Added Wavesfight arena registration for `Corridor Sweep`, `Stronghold`, and `Final Push`
+- Added SNI hostname support to TLS client connections for `nginx stream`-based 443 routing
 
 ### Notes
 
