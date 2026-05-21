@@ -46,7 +46,7 @@ module Termfront
       private
 
       def prompt_address
-        input = "localhost:#{Config::PVP_PORT}"
+        input = Config::PVP_DEFAULT_ADDRESS
 
         STDIN.raw do |stdin|
           loop do
@@ -80,7 +80,7 @@ module Termfront
               data.each_byte do |b|
                 case b
                 when 27 then return nil
-                when 13, 10 then return input.empty? ? "localhost:#{Config::PVP_PORT}" : input
+                when 13, 10 then return input.empty? ? Config::PVP_DEFAULT_ADDRESS : input
                 when 127, 8 then input = input[0...-1] unless input.empty?
                 when 32..126 then input << b.chr
                 end
