@@ -10,7 +10,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 - Changed the default multiplayer server address to `termfront.gamelinks007.net:443`
 
-## [0.1.0] - 2026-05-20
+## [0.1.0] - 2026-05-21
 
 Initial public gem release candidate.
 
