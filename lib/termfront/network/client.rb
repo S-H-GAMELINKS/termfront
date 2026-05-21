@@ -63,21 +63,26 @@ module Termfront
         STDIN.raw do |stdin|
           loop do
             rows, cols = @stdout.winsize
-            buf = +"\e[?2026h\e[H\e[2J"
+            buf = TerminalOutput.begin_frame(home: true, clear: true)
+            lines = Array.new(rows) { " " * cols }
 
             title = "PvP - Enter Server Address"
-            tc = [(cols - title.size) / 2, 1].max
-            buf << "\e[#{rows / 2 - 2};#{tc}H\e[1;96m#{title}\e[0m"
+            tc = [(cols - title.size) / 2 + 1, 1].max
+            lines[rows / 2 - 3] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;96m#{title}\e[0m", cols)
 
             prompt = "> #{input}_"
-            pc = [(cols - prompt.size) / 2, 1].max
-            buf << "\e[#{rows / 2};#{pc}H\e[97m> #{input}\e[5m_\e[0m"
+            pc = [(cols - prompt.size) / 2 + 1, 1].max
+            lines[rows / 2 - 1] = TerminalOutput.fit_ansi("#{" " * (pc - 1)}\e[97m> #{input}\e[5m_\e[0m", cols)
 
             hint = "(Enter to connect, ESC to cancel)"
-            hc = [(cols - hint.size) / 2, 1].max
-            buf << "\e[#{rows / 2 + 2};#{hc}H\e[90m#{hint}\e[0m"
+            hc = [(cols - hint.size) / 2 + 1, 1].max
+            lines[rows / 2 + 1] = TerminalOutput.fit_ansi("#{" " * (hc - 1)}\e[90m#{hint}\e[0m", cols)
 
-            buf << "\e[?2026l"
+            lines.each_with_index do |line, index|
+              buf << line
+              buf << "\r\n" if index < rows - 1
+            end
+            buf << TerminalOutput.end_frame
             TerminalOutput.write_all(@stdout, buf)
 
             next unless IO.select([stdin], nil, nil, Config::FRAME_DT)
@@ -103,14 +108,19 @@ module Termfront
         STDIN.raw do |stdin|
           loop do
             rows, cols = @stdout.winsize
-            buf = +"\e[?2026h\e[H\e[2J"
+            buf = TerminalOutput.begin_frame(home: true, clear: true)
+            lines = Array.new(rows) { " " * cols }
             msg = "Waiting for opponent..."
-            mc = [(cols - msg.size) / 2, 1].max
-            buf << "\e[#{rows / 2};#{mc}H\e[1;93m#{msg}\e[0m"
+            mc = [(cols - msg.size) / 2 + 1, 1].max
+            lines[rows / 2 - 1] = TerminalOutput.fit_ansi("#{" " * (mc - 1)}\e[1;93m#{msg}\e[0m", cols)
             hint = "(ESC to cancel)"
-            hc = [(cols - hint.size) / 2, 1].max
-            buf << "\e[#{rows / 2 + 2};#{hc}H\e[90m#{hint}\e[0m"
-            buf << "\e[?2026l"
+            hc = [(cols - hint.size) / 2 + 1, 1].max
+            lines[rows / 2 + 1] = TerminalOutput.fit_ansi("#{" " * (hc - 1)}\e[90m#{hint}\e[0m", cols)
+            lines.each_with_index do |line, index|
+              buf << line
+              buf << "\r\n" if index < rows - 1
+            end
+            buf << TerminalOutput.end_frame
             TerminalOutput.write_all(@stdout, buf)
 
             if IO.select([stdin], nil, nil, 0)
@@ -360,7 +370,7 @@ module Termfront
           wcol[c] = Sprite.wall_brightness(d, sides[c])
         end
 
-        buf = +"\e[?2026h\e[H"
+        buf = TerminalOutput.begin_frame(home: true)
 
         render_pvp_hud(buf, cols)
         render_view(buf, view_h, view_w, wtop, wbot, wcol)
@@ -370,7 +380,7 @@ module Termfront
         render_crosshair(buf, view_h, view_w, cols)
         render_damage_flash(buf, view_h, view_w)
 
-        buf << "\e[?2026l"
+        buf << TerminalOutput.end_frame
         TerminalOutput.write_all(@stdout, buf)
       end
 
@@ -412,7 +422,7 @@ module Termfront
               buf << "\xE2\x96\x80"
             end
           end
-          buf << "\e[0m\e[K\r\n"
+          buf << "\e[0m\r\n"
         end
       end
 
@@ -533,7 +543,7 @@ module Termfront
         ping_str = " #{@conn.rtt}ms"
 
         pad = [(cols - bar_w - 15) / 2, 0].max
-        buf << "#{" " * pad}#{shield_str}\e[97m#{opp_str}\e[90m#{ping_str}\e[0m\e[K\r\n"
+        buf << TerminalOutput.fit_ansi("#{" " * pad}#{shield_str}\e[97m#{opp_str}\e[90m#{ping_str}\e[0m", cols) << "\r\n"
 
         weapon = @player.current_weapon
         wcolor = weapon.type_id.to_s.start_with?("shock") ? "\e[96m" : "\e[97m"
@@ -549,11 +559,11 @@ module Termfront
         end
 
         line = "#{ammo_str}  T:swap  Space:fire"
-        buf << line.ljust(cols + 30)[0, cols + 30] << "\e[K\r\n"
+        buf << TerminalOutput.fit_ansi(line, cols) << "\r\n"
       end
 
       def render_pvp_radar(buf, cols, radar_h)
-        buf << ("\xE2\x94\x80" * cols)[0, cols * 3] << "\e[K\r\n"
+        buf << ("\xE2\x94\x80" * cols)[0, cols * 3] << "\r\n"
 
         r = Config::RADAR_RADIUS
         diam = r * 2 + 1
@@ -599,22 +609,23 @@ module Termfront
         ]
 
         radar_h.times do |row|
+          line = +""
           if row < diam
-            buf << "  "
+            line << "  "
             diam.times do |cx|
-              buf << if opp_cell && opp_cell == [row, cx]
-                       "\e[96m*\e[0m"
-                     elsif row == r && cx == r
-                       "\e[92m^\e[0m"
-                     elsif grid[row][cx] == "#"
-                       "\e[90m#\e[0m"
-                     else
-                       grid[row][cx]
-                     end
+              line << if opp_cell && opp_cell == [row, cx]
+                        "\e[96m*\e[0m"
+                      elsif row == r && cx == r
+                        "\e[92m^\e[0m"
+                      elsif grid[row][cx] == "#"
+                        "\e[90m#\e[0m"
+                      else
+                        grid[row][cx]
+                      end
             end
-            buf << (row < info_lines.size ? "    #{info_lines[row]}" : "")
+            line << (row < info_lines.size ? "    #{info_lines[row]}" : "")
           end
-          buf << "\e[0m\e[K"
+          buf << TerminalOutput.fit_ansi(line, cols)
           buf << "\r\n" if row < radar_h - 1
         end
       end
@@ -657,13 +668,13 @@ module Termfront
 
       def show_error(msg)
         rows, cols = @stdout.winsize
-        buf = +"\e[?2026h\e[H\e[2J"
+        buf = TerminalOutput.begin_frame(home: true, clear: true)
         mc = [(cols - msg.size) / 2, 1].max
         buf << "\e[#{rows / 2};#{mc}H\e[1;91m#{msg}\e[0m"
         hint = "(Press any key)"
         hc = [(cols - hint.size) / 2, 1].max
         buf << "\e[#{rows / 2 + 2};#{hc}H\e[90m#{hint}\e[0m"
-        buf << "\e[?2026l"
+        buf << TerminalOutput.end_frame
         TerminalOutput.write_all(@stdout, buf)
         STDIN.raw { |s| s.getc }
       end

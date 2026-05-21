@@ -39,18 +39,19 @@ module Termfront
         wbot[c] = [(vmid + lh / 2.0).to_i, virt_h].min
         wcol[c] = Sprite.wall_brightness(d, sides[c])
       end
+      pixels = build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
+      overlay_enemies_3d(pixels, view_h, view_w, dists, player, enemies, projectiles, drops)
+      overlay_damage_flash(pixels, view_h, view_w, player)
 
-      buf = +"\e[?2026h\e[H"
+      buf = TerminalOutput.begin_frame(home: true)
 
       render_hud(buf, cols, player, drops, terminals)
-      render_view(buf, view_h, view_w, wtop, wbot, wcol)
-      render_enemies_3d(buf, view_h, view_w, dists, player, enemies, projectiles, drops)
+      render_view(buf, view_h, view_w, pixels)
       buf << "\e[#{3 + view_h};1H"
       render_radar(buf, cols, radar_h, player, enemies, drops, terminals)
       render_crosshair(buf, view_h, view_w, cols, player)
-      render_damage_flash(buf, view_h, view_w, player)
 
-      buf << "\e[?2026l"
+      buf << TerminalOutput.end_frame
       TerminalOutput.write_all(@stdout, buf)
     end
 
@@ -63,21 +64,21 @@ module Termfront
     end
 
     def render_blank(rows, cols)
-      buf = +"\e[?2026h\e[H"
+      buf = TerminalOutput.begin_frame(home: true)
       rows.times do |row|
         buf << "\e[#{row + 1};1H"
         buf << (" " * cols)
       end
-      buf << "\e[?2026l"
+      buf << TerminalOutput.end_frame
       TerminalOutput.write_all(@stdout, buf)
     end
 
     def render_centered_message(rows, cols, msg, color)
-      buf = +"\e[?2026h\e[H\e[2J"
+      buf = TerminalOutput.begin_frame(home: true, clear: true)
       r = rows / 2
       c = [(cols - msg.size) / 2 + 1, 1].max
       buf << "\e[#{r};#{c}H#{color}#{msg}\e[0m"
-      buf << "\e[?2026l"
+      buf << TerminalOutput.end_frame
       TerminalOutput.write_all(@stdout, buf)
     end
 
@@ -145,7 +146,7 @@ module Termfront
       pct_s = "#{(pct * 100).to_i}%"
       shield_str = "SHIELD #{color}#{"█" * filled}#{"░" * empty}\e[0m #{pct_s}"
       pad = [(cols - bar_w - 15) / 2, 0].max
-      buf << "#{" " * pad}#{shield_str}\e[K\r\n"
+      buf << TerminalOutput.fit_ansi("#{" " * pad}#{shield_str}", cols) << "\r\n"
 
       weapon = player.current_weapon
       wcolor = weapon.type_id.to_s.start_with?("shock") ? "\e[96m" : "\e[97m"
@@ -173,53 +174,70 @@ module Termfront
                      end
 
       line = "#{ammo_str}  T:swap  #{interact_str}  Space:fire"
-      buf << line.ljust(cols + 30)[0, cols + 30] << "\e[K\r\n"
+      buf << TerminalOutput.fit_ansi(line, cols) << "\r\n"
     end
 
-    def render_view(buf, view_h, view_w, wtop, wbot, wcol)
+    def build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
+      pixels = Array.new(virt_h) { Array.new(view_w) }
+      virt_h.times do |vr|
+        row = pixels[vr]
+        view_w.times do |c|
+          row[c] = if vr < wtop[c]
+                     Config::CEIL_C
+                   elsif vr < wbot[c]
+                     wcol[c]
+                   else
+                     Config::FLOOR_C
+                   end
+        end
+      end
+      pixels
+    end
+
+    def render_view(buf, view_h, view_w, pixels)
       view_h.times do |r|
         vp0 = r * 2
         vp1 = r * 2 + 1
-        pfg = -1
-        pbg = -1
+        pfg = nil
+        pbg = nil
+        top_row = pixels[vp0]
+        bot_row = pixels[vp1]
 
         view_w.times do |c|
-          tc = if vp0 < wtop[c]
-                 Config::CEIL_C
-               else
-                 (vp0 < wbot[c] ? wcol[c] : Config::FLOOR_C)
-               end
-          bc = if vp1 < wtop[c]
-                 Config::CEIL_C
-               else
-                 (vp1 < wbot[c] ? wcol[c] : Config::FLOOR_C)
-               end
+          tc = top_row[c]
+          bc = bot_row[c]
 
           if tc == bc
-            if bc != pbg
-              buf << "\e[48;5;#{bc}m"
+            if bg_only?(tc)
+              if tc != pbg
+                buf << ansi_bg(tc)
+                pbg = tc
+                pfg = nil
+              end
+              buf << " "
+            else
+              if tc != pfg || pbg
+                buf << ansi_fg(tc)
+                pfg = tc
+                pbg = nil
+              end
+              buf << "\xE2\x96\x88"
+            end
+          else
+            if tc != pfg || bc != pbg
+              buf << ansi_fg(tc) << ansi_bg(bc)
+              pfg = tc
               pbg = bc
             end
-            buf << " "
-          else
-            if tc != pfg && bc != pbg
-              buf << "\e[38;5;#{tc};48;5;#{bc}m"
-            elsif tc != pfg
-              buf << "\e[38;5;#{tc}m"
-            elsif bc != pbg
-              buf << "\e[48;5;#{bc}m"
-            end
-            pfg = tc
-            pbg = bc
             buf << "\xE2\x96\x80"
           end
         end
-        buf << "\e[0m\e[K\r\n"
+        buf << "\e[0m\r\n"
       end
     end
 
     def render_radar(buf, cols, radar_h, player, enemies, drops, terminals)
-      buf << ("\xE2\x94\x80" * cols)[0, cols * 3] << "\e[K\r\n"
+      buf << ("\xE2\x94\x80" * cols)[0, cols * 3] << "\r\n"
 
       r = Config::RADAR_RADIUS
       diam = r * 2 + 1
@@ -309,34 +327,35 @@ module Termfront
       ]
 
       radar_h.times do |row|
+        line = +""
         if row < diam
-          buf << "  "
+          line << "  "
           diam.times do |cx|
             if (etype = enemy_cells[[row, cx]])
               ec = etype == :executor ? "\e[95m" : "\e[91m"
-              buf << "#{ec}*\e[0m"
+              line << "#{ec}*\e[0m"
             elsif (drop = drop_cells[[row, cx]])
               dc = drop.type.to_s.start_with?("shock") ? "\e[96m" : "\e[93m"
               dl = Weapon::Base.registry[drop.type].new.name[0]
-              buf << "#{dc}#{dl}\e[0m"
+              line << "#{dc}#{dl}\e[0m"
             elsif terminal_cells[[row, cx]]
-              buf << "\e[96mT\e[0m"
+              line << "\e[96mT\e[0m"
             elsif row == r && cx == r
-              buf << "\e[92m^\e[0m"
+              line << "\e[92m^\e[0m"
             elsif grid[row][cx] == "#"
-              buf << "\e[90m#\e[0m"
+              line << "\e[90m#\e[0m"
             else
-              buf << grid[row][cx]
+              line << grid[row][cx]
             end
           end
-          buf << (row < info_lines.size ? "    #{info_lines[row]}" : "")
+          line << (row < info_lines.size ? "    #{info_lines[row]}" : "")
         end
-        buf << "\e[0m\e[K"
+        buf << TerminalOutput.fit_ansi(line, cols)
         buf << "\r\n" if row < radar_h - 1
       end
     end
 
-    def render_enemies_3d(buf, view_h, view_w, dists, player, enemies, projectiles, drops)
+    def overlay_enemies_3d(pixels, view_h, view_w, dists, player, enemies, projectiles, drops)
       dx = Math.cos(player.angle)
       dy = Math.sin(player.angle)
       px = -dy * Math.tan(Config::FOV / 2.0)
@@ -408,27 +427,11 @@ module Termfront
               bot_color = ny1 ? Sprite.for(e.sprite_id, nx, ny1) : nil
               next unless top_color || bot_color
 
-              buf << "\e[#{3 + r};#{c + 1}H"
-              buf << if top_color && bot_color
-                       if top_color == bot_color
-                         "\e[38;2;#{top_color}m\xE2\x96\x88\e[0m"
-                       else
-                         "\e[38;2;#{top_color};48;2;#{bot_color}m\xE2\x96\x80\e[0m"
-                       end
-                     elsif top_color
-                       "\e[38;2;#{top_color}m\xE2\x96\x80\e[0m"
-                     else
-                       "\e[38;2;#{bot_color}m\xE2\x96\x84\e[0m"
-                     end
+              pixels[vp0][c] = top_color if top_color
+              pixels[vp1][c] = bot_color if bot_color
             else
-              buf << "\e[#{3 + r};#{c + 1}H"
-              buf << if top_in && bot_in
-                       "\e[38;2;#{fallback_color}m\xE2\x96\x88\e[0m"
-                     elsif top_in
-                       "\e[38;2;#{fallback_color}m\xE2\x96\x80\e[0m"
-                     else
-                       "\e[38;2;#{fallback_color}m\xE2\x96\x84\e[0m"
-                     end
+              pixels[vp0][c] = fallback_color if top_in
+              pixels[vp1][c] = fallback_color if bot_in
             end
           end
         end
@@ -449,7 +452,8 @@ module Termfront
 
           ci = c - bar_sx
           color = ci < filled ? "0;200;0" : "200;0;0"
-          buf << "\e[#{3 + bar_row};#{c + 1}H\e[38;2;#{color}m\xE2\x96\x88\e[0m"
+          pixels[bar_row * 2][c] = color
+          pixels[bar_row * 2 + 1][c] = color
         end
       end
 
@@ -493,14 +497,8 @@ module Termfront
             bot_in = vp1 >= draw_top && vp1 < draw_bot
             next unless top_in || bot_in
 
-            buf << "\e[#{3 + r};#{c + 1}H"
-            buf << if top_in && bot_in
-                     "\e[38;2;#{color}m\xE2\x96\x88\e[0m"
-                   elsif top_in
-                     "\e[38;2;#{color}m\xE2\x96\x80\e[0m"
-                   else
-                     "\e[38;2;#{color}m\xE2\x96\x84\e[0m"
-                   end
+            pixels[vp0][c] = color if top_in
+            pixels[vp1][c] = color if bot_in
           end
         end
       end
@@ -533,29 +531,32 @@ module Termfront
             bot_in = vp1 >= draw_top && vp1 < draw_bot
             next unless top_in || bot_in
 
-            buf << "\e[#{3 + r};#{c + 1}H"
-            buf << if top_in && bot_in
-                     "\e[#{col_code}m\xE2\x96\x88\e[0m"
-                   elsif top_in
-                     "\e[#{col_code}m\xE2\x96\x80\e[0m"
-                   else
-                     "\e[#{col_code}m\xE2\x96\x84\e[0m"
-                   end
+            proj_color = col_code == "94" ? "94;94;255" : "255;210;80"
+            pixels[vp0][c] = proj_color if top_in
+            pixels[vp1][c] = proj_color if bot_in
           end
         end
       end
     end
 
-    def render_damage_flash(buf, view_h, view_w, player)
+    def overlay_damage_flash(pixels, view_h, view_w, player)
       return unless player.damage_flash > 0
 
       intensity = player.damage_flash * 60
       flash_w = 2
+      color = "#{intensity};0;0"
 
       view_h.times do |r|
-        buf << "\e[#{3 + r};1H\e[48;2;#{intensity};0;0m#{" " * flash_w}\e[0m"
-        rc = [view_w - flash_w + 1, 1].max
-        buf << "\e[#{3 + r};#{rc}H\e[48;2;#{intensity};0;0m#{" " * flash_w}\e[0m"
+        vp0 = r * 2
+        vp1 = vp0 + 1
+        flash_w.times do |offset|
+          left = offset
+          right = view_w - flash_w + offset
+          pixels[vp0][left] = color if left.between?(0, view_w - 1)
+          pixels[vp1][left] = color if left.between?(0, view_w - 1)
+          pixels[vp0][right] = color if right.between?(0, view_w - 1)
+          pixels[vp1][right] = color if right.between?(0, view_w - 1)
+        end
       end
     end
 
@@ -570,6 +571,26 @@ module Termfront
       fs = [cc - hw, 1].max
       fe = [cc + hw, cols].min
       buf << "\e[#{cr};#{fs}H\e[93m#{"*" * (fe - fs + 1)}\e[0m"
+    end
+
+    def bg_only?(color)
+      color.is_a?(Integer)
+    end
+
+    def ansi_fg(color)
+      if color.is_a?(Integer)
+        "\e[38;5;#{color}m"
+      else
+        "\e[38;2;#{color}m"
+      end
+    end
+
+    def ansi_bg(color)
+      if color.is_a?(Integer)
+        "\e[48;5;#{color}m"
+      else
+        "\e[48;2;#{color}m"
+      end
     end
   end
 end

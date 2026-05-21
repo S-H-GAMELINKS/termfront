@@ -321,7 +321,7 @@ module Termfront
     def show_mission_select
       selected = 0
       missions = Mission::Base.campaign
-      TerminalOutput.write_all(@stdout, "\e[?2026h\e[H\e[2J\e[?2026l")
+      TerminalOutput.write_all(@stdout, TerminalOutput.begin_frame(home: true, clear: true) + TerminalOutput.end_frame)
 
       STDIN.raw do |stdin|
         loop do
@@ -367,37 +367,37 @@ module Termfront
 
     def render_mission_select(selected, missions)
       rows, cols = @stdout.winsize
-      buf = +"\e[?2026h\e[H"
+      buf = TerminalOutput.begin_frame(home: true)
+      lines = Array.new(rows) { " " * cols }
 
       title = "SELECT MISSION"
       tc = [(cols - title.size) / 2 + 1, 1].max
-      buf << "\e[2;#{tc}H\e[1;38;2;120;140;255m#{title}\e[0m"
+      lines[1] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{title}\e[0m", cols)
 
       diff = Enemy::Base::DIFFICULTIES[@difficulty]
       diff_colors = ["\e[92m", "\e[93m", "\e[38;2;255;165;0m", "\e[91m"]
       diff_label = "< #{diff[:name]} >"
       dc = [(cols - diff_label.size) / 2 + 1, 1].max
-      buf << "\e[3;1H\e[K"
-      buf << "\e[3;#{dc}H#{diff_colors[@difficulty]}#{diff_label}\e[0m"
+      lines[2] = TerminalOutput.fit_ansi("#{" " * (dc - 1)}#{diff_colors[@difficulty]}#{diff_label}\e[0m", cols)
 
       missions.each_with_index do |klass, i|
         m = klass.new
         row = 5 + i * 2
         label = "  #{i + 1}. #{m.name}"
         lc = [(cols - 40) / 2 + 1, 1].max
-        buf << if i == selected
-                 "\e[#{row};#{lc}H\e[1;97;44m> #{label.strip.ljust(38)}\e[0m"
+        text = if i == selected
+                 "\e[1;97;44m> #{label.strip.ljust(38)}\e[0m"
                else
-                 "\e[#{row};#{lc}H\e[97m  #{label.strip.ljust(38)}\e[0m"
+                 "\e[97m  #{label.strip.ljust(38)}\e[0m"
                end
+        lines[row - 1] = TerminalOutput.fit_ansi("#{" " * (lc - 1)}#{text}", cols)
       end
 
       brief_row = 5 + missions.size * 2 + 1
       m = missions[selected].new
       briefing = m.briefing
       bc = [(cols - briefing.size) / 2 + 1, 1].max
-      buf << "\e[#{brief_row};1H\e[K"
-      buf << "\e[#{brief_row};#{bc}H\e[38;2;180;180;200m#{briefing}\e[0m"
+      lines[brief_row - 1] = TerminalOutput.fit_ansi("#{" " * (bc - 1)}\e[38;2;180;180;200m#{briefing}\e[0m", cols)
 
       info_row = brief_row + 2
       edefs = m.enemy_defs
@@ -416,18 +416,19 @@ module Termfront
       info += ", #{executor_c} Executor#{executor_c != 1 ? "s" : ""}" if executor_c > 0
       info += "  |  HP x#{diff[:hp_mult]}"
       ic = [(cols - info.size) / 2 + 1, 1].max
-      buf << "\e[#{info_row};1H\e[K"
-      buf << "\e[#{info_row};#{ic}H\e[38;2;140;140;160m#{info}\e[0m"
+      lines[info_row - 1] = TerminalOutput.fit_ansi("#{" " * (ic - 1)}\e[38;2;140;140;160m#{info}\e[0m", cols)
 
       ctrl_row = info_row + 2
       ctrl = "Up/Down: Select   Left/Right: Difficulty   Enter/1-5: Start   Q: Back"
       cc = [(cols - ctrl.size) / 2 + 1, 1].max
-      buf << "\e[#{ctrl_row};1H\e[K"
-      buf << "\e[#{ctrl_row};#{cc}H\e[38;2;100;100;120m#{ctrl}\e[0m"
+      lines[ctrl_row - 1] = TerminalOutput.fit_ansi("#{" " * (cc - 1)}\e[38;2;100;100;120m#{ctrl}\e[0m", cols)
 
-      (ctrl_row + 1).upto(rows) { |r| buf << "\e[#{r};1H\e[K" }
+      lines.each_with_index do |line, index|
+        buf << line
+        buf << "\r\n" if index < rows - 1
+      end
 
-      buf << "\e[?2026l"
+      buf << TerminalOutput.end_frame
       TerminalOutput.write_all(@stdout, buf)
     end
 
@@ -440,7 +441,7 @@ module Termfront
     end
 
     def clear_screen
-      TerminalOutput.write_all(@stdout, "\e[?2026h\e[H\e[2J\e[?2026l")
+      TerminalOutput.write_all(@stdout, TerminalOutput.begin_frame(home: true, clear: true) + TerminalOutput.end_frame)
     end
 
     def reset_title_screen_state

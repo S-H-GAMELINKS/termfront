@@ -133,7 +133,7 @@ module Termfront
       lines = caption.to_s.split("\n")
       base_row = [rows - lines.size - 2, 2].max
 
-      buf = +"\e[?2026h"
+      buf = TerminalOutput.begin_frame
       lines.each_with_index do |line, index|
         col = [(cols - line.size) / 2 + 1, 1].max
         buf << "\e[#{base_row + index};1H\e[K"
@@ -144,7 +144,7 @@ module Termfront
       progress = "#{elapsed.ceil}/#{duration.ceil}s"
       buf << "\e[#{rows - 1};3H\e[90m#{hint}\e[0m"
       buf << "\e[#{rows - 1};#{[cols - progress.size - 1, 1].max}H\e[90m#{progress}\e[0m"
-      buf << "\e[?2026l"
+      buf << TerminalOutput.end_frame
       TerminalOutput.write_all(@stdout, buf)
     end
 

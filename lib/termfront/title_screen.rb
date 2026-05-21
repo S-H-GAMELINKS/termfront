@@ -21,7 +21,7 @@ module Termfront
       @demo_wp_t = 0.0
       @demo_fire = 0
 
-      TerminalOutput.write_all(@stdout, "\e[?2026h\e[H\e[2J\e[?2026l")
+      TerminalOutput.write_all(@stdout, TerminalOutput.begin_frame(home: true, clear: true) + TerminalOutput.end_frame)
 
       STDIN.raw do |stdin|
         loop do
@@ -63,10 +63,8 @@ module Termfront
       rows, cols = @stdout.winsize
       rows = [rows, 10].max
       cols = [cols, 20].max
-      buf = +"\e[?2026h\e[H"
-      rows.times do |row|
-        buf << "\e[#{row + 1};1H\e[K"
-      end
+      buf = TerminalOutput.begin_frame(home: true)
+      lines = Array.new(rows) { " " * cols }
 
       reserved_rows = 7
       th = rows - reserved_rows
@@ -267,7 +265,7 @@ module Termfront
                     " "
                   end
         end
-        buf << "\e[#{r + 1};1H" << line << "\e[K"
+        lines[r] = TerminalOutput.fit_ansi(line, cols)
       end
 
       # Title text
@@ -276,10 +274,8 @@ module Termfront
       sub   = "Terminal FPS"
       tc = [(cols - title.size) / 2 + 1, 1].max
       sc = [(cols - sub.size) / 2 + 1, 1].max
-      buf << "\e[#{title_row};1H\e[K"
-      buf << "\e[#{title_row};#{tc}H\e[1;38;2;120;140;255m#{title}\e[0m"
-      buf << "\e[#{title_row + 1};1H\e[K"
-      buf << "\e[#{title_row + 1};#{sc}H\e[38;2;80;80;120m#{sub}\e[0m"
+      lines[title_row - 1] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{title}\e[0m", cols)
+      lines[title_row] = TerminalOutput.fit_ansi("#{" " * (sc - 1)}\e[38;2;80;80;120m#{sub}\e[0m", cols)
 
       # Menu items
       items = ["[P] PvP", "[C] Campaign", "[S] Training", "[Q] Quit"]
@@ -287,14 +283,15 @@ module Termfront
       menu_row = [[title_row + 2, rows - items_count_for_menu].min, 1].max
       items.each_with_index do |item, i|
         ic = [(cols - item.size) / 2 + 1, 1].max
-        buf << "\e[#{menu_row + i};1H\e[K"
-        buf << "\e[#{menu_row + i};#{ic}H\e[97m#{item}\e[0m"
+        lines[menu_row + i - 1] = TerminalOutput.fit_ansi("#{" " * (ic - 1)}\e[97m#{item}\e[0m", cols)
       end
 
-      last_row = menu_row + items.size
-      last_row.upto(rows) { |r| buf << "\e[#{r};1H\e[K" }
+      lines.each_with_index do |line, index|
+        buf << line
+        buf << "\r\n" if index < rows - 1
+      end
 
-      buf << "\e[?2026l"
+      buf << TerminalOutput.end_frame
       TerminalOutput.write_all(@stdout, buf)
     end
   end

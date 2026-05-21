@@ -58,25 +58,31 @@ module Termfront
       rows = [rows, 12].max
       cols = [cols, 40].max
 
-      buf = +"\e[?2026h\e[H"
-      rows.times do |row|
-        buf << "\e[#{row + 1};1H\e[K"
-      end
+      buf = TerminalOutput.begin_frame(home: true)
+      lines = Array.new(rows) { " " * cols }
 
       top = " #{title.upcase} "
-      buf << "\e[2;3H\e[1;96m#{top}\e[0m"
+      lines[1] = TerminalOutput.fit_ansi("  \e[1;96m#{top}\e[0m", cols)
 
       if page[:type] == :title_card
-        render_title_card_page(buf, rows, cols, page)
+        render_title_card_page(lines, rows, cols, page)
       else
-        render_text_page(buf, rows, page)
+        render_text_page(lines, rows, cols, page)
       end
 
       footer = "[Enter] Next  [Esc] Skip"
       status = "#{page_no}/#{page_count}"
-      buf << "\e[#{rows - 1};3H\e[90m#{footer}\e[0m"
-      buf << "\e[#{rows - 1};#{[cols - status.size - 1, 1].max}H\e[90m#{status}\e[0m"
-      buf << "\e[?2026l"
+      footer_line = +"  \e[90m#{footer}\e[0m"
+      status_col = [cols - status.size, 1].max
+      footer_line << (" " * [status_col - footer_line.size, 0].max)
+      footer_line << "\e[90m#{status}\e[0m"
+      lines[rows - 2] = TerminalOutput.fit_ansi(footer_line, cols)
+
+      lines.each_with_index do |line, index|
+        buf << line
+        buf << "\r\n" if index < rows - 1
+      end
+      buf << TerminalOutput.end_frame
 
       TerminalOutput.write_all(@stdout, buf)
     end
@@ -131,9 +137,9 @@ module Termfront
       lines
     end
 
-    def render_text_page(buf, rows, page)
+    def render_text_page(lines, rows, cols, page)
       if page[:speaker]
-        buf << "\e[4;3H\e[1;93m#{page[:speaker]}\e[0m"
+        lines[3] = TerminalOutput.fit_ansi("  \e[1;93m#{page[:speaker]}\e[0m", cols)
       end
 
       start_row = page[:speaker] ? 6 : 5
@@ -141,17 +147,17 @@ module Termfront
         row = start_row + index
         break if row >= rows - 2
 
-        buf << "\e[#{row};3H#{line}"
+        lines[row - 1] = TerminalOutput.fit_ansi("  #{line}", cols)
       end
     end
 
-    def render_title_card_page(buf, rows, cols, page)
+    def render_title_card_page(lines, rows, cols, page)
       total_lines = page[:lines].size
       start_row = [[(rows - total_lines) / 2, 4].max, rows - total_lines - 2].min
 
       page[:lines].each_with_index do |line, index|
         col = [(cols - line.size) / 2 + 1, 1].max
-        buf << "\e[#{start_row + index};#{col}H\e[1;97m#{line}\e[0m"
+        lines[start_row + index - 1] = TerminalOutput.fit_ansi("#{" " * (col - 1)}\e[1;97m#{line}\e[0m", cols)
       end
     end
   end
