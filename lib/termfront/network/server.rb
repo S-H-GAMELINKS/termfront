@@ -589,8 +589,8 @@ module Termfront
       end
 
       def load_or_create_cert
-        cert_file = "termfront_server.crt"
-        key_file  = "termfront_server.key"
+        cert_file = ENV.fetch("TERMFRONT_TLS_CERT_FILE", "termfront_server.crt")
+        key_file  = ENV.fetch("TERMFRONT_TLS_KEY_FILE", "termfront_server.key")
 
         if File.exist?(cert_file) && File.exist?(key_file)
           cert = OpenSSL::X509::Certificate.new(File.read(cert_file))

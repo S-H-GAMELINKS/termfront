@@ -6,9 +6,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Added
+
+- Added TLS verification coverage for multiplayer connection settings and certificate trust handling
+
 ### Changed
 
 - Added visible remote shot tracer effects during PvP and Wavesfight multiplayer matches
+- Enabled TLS certificate chain and hostname verification for multiplayer client connections
+- Added support for `TERMFRONT_TLS_CERT_FILE` and `TERMFRONT_TLS_KEY_FILE` when loading the server certificate
 
 ## [0.1.1] - 2026-05-21
 

@@ -54,6 +54,14 @@ Start a PvP server:
 termfront-server
 ```
 
+Use custom TLS certificate paths:
+
+```bash
+TERMFRONT_TLS_CERT_FILE=/path/to/fullchain.pem \
+TERMFRONT_TLS_KEY_FILE=/path/to/privkey.pem \
+termfront-server
+```
+
 Use a custom port:
 
 ```bash
@@ -110,7 +118,7 @@ Wavesfight is a PvE survival mode built on selected campaign maps.
 PvP is currently marked experimental.
 
 - The server listens on TCP and wraps traffic with TLS.
-- The client connects directly to `host:port`.
+- The client connects directly to `host:port` and verifies the server certificate and hostname.
 - The default multiplayer endpoint is `termfront.gamelinks007.net:443`.
 - Matchmaking now supports `1v1`, `2v2`, and `4v4`.
 - Players choose the match size on the client, and the server keeps separate queues for each mode.
