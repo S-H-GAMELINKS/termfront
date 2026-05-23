@@ -3,29 +3,47 @@
 require "socket"
 require "openssl"
 require "json"
+require "time"
 
 module Termfront
   module Network
     class Connection
+      PeerInfo = Struct.new(
+        :certificate_sha256,
+        :public_key_sha256,
+        :subject,
+        :issuer,
+        :not_after,
+        keyword_init: true
+      )
+
       attr_reader :rtt
+      attr_reader :peer_info
 
       def initialize
         @sock = nil
         @buf = +""
         @ping_ts = 0
         @rtt = 0
+        @peer_info = nil
       end
 
-      def connect(host, port)
+      def connect(host, port, ca_file: nil)
         tcp = TCPSocket.new(host, port)
         tcp.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
 
-        ctx = OpenSSL::SSL::SSLContext.new
-        ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+        ctx = build_ssl_context(ca_file: ca_file)
         @sock = OpenSSL::SSL::SSLSocket.new(tcp, ctx)
         @sock.hostname = host if @sock.respond_to?(:hostname=)
         @sock.sync = true
         @sock.connect
+        @sock.post_connection_check(host)
+        @peer_info = build_peer_info(@sock.peer_cert)
+      rescue StandardError
+        tcp&.close
+        @sock = nil
+        @peer_info = nil
+        raise
       end
 
       def send_msg(hash)
@@ -76,6 +94,7 @@ module Termfront
           nil
         end
         @sock = nil
+        @peer_info = nil
       end
 
       def connected?
@@ -95,6 +114,31 @@ module Termfront
 
       def clock
         Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      def build_ssl_context(ca_file:)
+        ctx = OpenSSL::SSL::SSLContext.new
+        ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+        ctx.verify_hostname = true if ctx.respond_to?(:verify_hostname=)
+        ctx.cert_store = build_cert_store(ca_file: ca_file)
+        ctx
+      end
+
+      def build_cert_store(ca_file:)
+        store = OpenSSL::X509::Store.new
+        store.set_default_paths
+        store.add_file(ca_file) if ca_file
+        store
+      end
+
+      def build_peer_info(cert)
+        PeerInfo.new(
+          certificate_sha256: OpenSSL::Digest::SHA256.hexdigest(cert.to_der),
+          public_key_sha256: OpenSSL::Digest::SHA256.hexdigest(cert.public_key.to_der),
+          subject: cert.subject.to_s,
+          issuer: cert.issuer.to_s,
+          not_after: cert.not_after.utc
+        )
       end
     end
   end
