@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-23
+
 ### Added
 
 - Added TLS verification coverage for multiplayer connection settings and certificate trust handling
