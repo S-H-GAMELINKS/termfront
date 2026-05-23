@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed TLS server certificate loading to include intermediate certificates from `fullchain.pem`, allowing clients to verify Let's Encrypt chains correctly
+
 ## [0.1.2] - 2026-05-23
 
 ### Added

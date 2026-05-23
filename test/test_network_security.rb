@@ -56,6 +56,33 @@ class TestNetworkSecurity < Minitest::Test
     assert_equal false, store.verify(cert)
   end
 
+  def test_server_loads_fullchain_and_exposes_intermediates
+    Dir.mktmpdir do |dir|
+      ca_key, ca_cert = build_ca
+      cert, key = build_server_certificate(ca_key, ca_cert, dns_names: ["localhost"])
+      cert_path = File.join(dir, "fullchain.pem")
+      key_path = File.join(dir, "privkey.pem")
+      File.write(cert_path, cert.to_pem + ca_cert.to_pem)
+      File.write(key_path, key.to_pem)
+
+      old_cert = ENV["TERMFRONT_TLS_CERT_FILE"]
+      old_key = ENV["TERMFRONT_TLS_KEY_FILE"]
+      ENV["TERMFRONT_TLS_CERT_FILE"] = cert_path
+      ENV["TERMFRONT_TLS_KEY_FILE"] = key_path
+
+      server = Termfront::Network::Server.new
+      loaded_cert, loaded_key, chain = server.send(:load_or_create_cert)
+
+      assert_equal cert.to_der, loaded_cert.to_der
+      assert_equal key.to_der, loaded_key.to_der
+      assert_equal 1, chain.size
+      assert_equal ca_cert.to_der, chain.first.to_der
+    ensure
+      ENV["TERMFRONT_TLS_CERT_FILE"] = old_cert
+      ENV["TERMFRONT_TLS_KEY_FILE"] = old_key
+    end
+  end
+
   private
 
   def build_ca

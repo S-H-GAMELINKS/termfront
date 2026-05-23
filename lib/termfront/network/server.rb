@@ -43,11 +43,12 @@ module Termfront
       end
 
       def run
-        cert, key = load_or_create_cert
+        cert, key, chain = load_or_create_cert
 
         ctx = OpenSSL::SSL::SSLContext.new
         ctx.cert = cert
         ctx.key  = key
+        ctx.extra_chain_cert = chain unless chain.empty?
 
         tcp_server = TCPServer.new("0.0.0.0", @port)
         ssl_server = OpenSSL::SSL::SSLServer.new(tcp_server, ctx)
@@ -593,7 +594,10 @@ module Termfront
         key_file  = ENV.fetch("TERMFRONT_TLS_KEY_FILE", "termfront_server.key")
 
         if File.exist?(cert_file) && File.exist?(key_file)
-          cert = OpenSSL::X509::Certificate.new(File.read(cert_file))
+          certs = OpenSSL::X509::Certificate.load(File.read(cert_file))
+          certs = [certs] unless certs.is_a?(Array)
+          cert = certs.first
+          chain = certs.drop(1)
           key  = OpenSSL::PKey::RSA.new(File.read(key_file))
           puts "Loaded existing certificate."
         else
@@ -601,8 +605,9 @@ module Termfront
           File.write(cert_file, cert.to_pem)
           File.write(key_file, key.to_pem)
           puts "Generated new self-signed certificate."
+          chain = []
         end
-        [cert, key]
+        [cert, key, chain]
       end
 
       def pvp_spawns
