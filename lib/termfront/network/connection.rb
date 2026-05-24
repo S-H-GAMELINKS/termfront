@@ -120,6 +120,7 @@ module Termfront
         ctx = OpenSSL::SSL::SSLContext.new
         ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
         ctx.verify_hostname = true if ctx.respond_to?(:verify_hostname=)
+        ctx.min_version = OpenSSL::SSL::TLS1_2_VERSION
         ctx.cert_store = build_cert_store(ca_file: ca_file)
         ctx
       end

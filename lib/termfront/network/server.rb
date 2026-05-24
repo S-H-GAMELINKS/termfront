@@ -48,6 +48,7 @@ module Termfront
         ctx = OpenSSL::SSL::SSLContext.new
         ctx.cert = cert
         ctx.key  = key
+        ctx.min_version = OpenSSL::SSL::TLS1_2_VERSION
         ctx.extra_chain_cert = chain unless chain.empty?
 
         tcp_server = TCPServer.new("0.0.0.0", @port)
@@ -85,24 +86,17 @@ module Termfront
           client.close
           return
         end
-        peer = begin
-          client.peeraddr[2]
-        rescue StandardError
-          "unknown"
-        end
         if request[:mode] == :wavesfight
-          enqueue_wavesfight_player(client, peer, request)
+          enqueue_wavesfight_player(client, request)
         else
-          enqueue_pvp_player(client, peer, request[:team_size])
+          enqueue_pvp_player(client, request[:team_size])
         end
       end
 
-      def enqueue_pvp_player(client, peer, team_size)
-        puts "Player connected from #{peer}, queued for #{team_size}v#{team_size}"
-
+      def enqueue_pvp_player(client, team_size)
         match_players = nil
         @queue_mutex.synchronize do
-          @queues[team_size] << { socket: client, peer: peer }
+          @queues[team_size] << { socket: client }
           required = team_size * 2
           if @queues[team_size].size >= required
             match_players = @queues[team_size].shift(required)
@@ -116,15 +110,14 @@ module Termfront
         Thread.new { run_match(team_size, match_players) }
       end
 
-      def enqueue_wavesfight_player(client, peer, request)
+      def enqueue_wavesfight_player(client, request)
         mission_id = request[:mission_id]
         difficulty = request[:difficulty]
         key = [mission_id, difficulty]
-        puts "Player connected from #{peer}, queued for wavesfight #{mission_id} diff=#{difficulty}"
 
         match_players = nil
         @queue_mutex.synchronize do
-          @wavesfight_queues[key] << { socket: client, peer: peer }
+          @wavesfight_queues[key] << { socket: client }
           if @wavesfight_queues[key].size >= 2
             match_players = @wavesfight_queues[key].shift(2)
           else
@@ -188,7 +181,6 @@ module Termfront
             id: idx,
             team: team,
             socket: entry[:socket],
-            peer: entry[:peer],
             spawn: pvp_spawns[idx],
             buf: +"",
             alive: true
@@ -228,7 +220,6 @@ module Termfront
             rescue IO::WaitReadable
               next
             rescue EOFError, Errno::ECONNRESET, Errno::EPIPE, IOError, OpenSSL::SSL::SSLError
-              puts "Player #{player[:id]} disconnected from #{player[:peer]}"
               broadcast(roster, { t: "match_end", reason: "disconnect", player_id: player[:id] }, except: player[:id])
               close_players(roster)
               puts "Match aborted."
@@ -323,7 +314,6 @@ module Termfront
           {
             id: idx,
             socket: entry[:socket],
-            peer: entry[:peer],
             buf: +"",
             x: spawn[0],
             y: spawn[1],
