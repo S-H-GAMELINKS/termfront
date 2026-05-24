@@ -20,6 +20,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Move per-connection handshake off the accept loop and drop silent clients after a short timeout
 - Cap server and client receive buffers and disconnect peers that flood bytes without a newline
 - End multiplayer matches after a maximum duration or when all players have been idle
+- Restrict the weapon field on multiplayer state messages to the legal loadout (`pistol`, `ar`)
 
 ### Added
 

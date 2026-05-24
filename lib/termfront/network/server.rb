@@ -13,6 +13,7 @@ module Termfront
       MAX_MSG_BYTES = 16 * 1024
       MATCH_MAX_DURATION = 30 * 60
       MATCH_IDLE_TIMEOUT = 5 * 60
+      ALLOWED_MP_WEAPONS = %w[pistol ar].freeze
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -313,6 +314,10 @@ module Termfront
           when "ping"
             send_json(player[:socket], { t: "pong", ts: msg[:ts] })
           when "state"
+            if msg.key?(:w)
+              weapon = normalize_weapon(msg[:w])
+              msg = weapon ? msg.merge(w: weapon.to_s) : msg.except(:w)
+            end
             broadcast(roster, msg.merge(from: player[:id]), except: player[:id])
           when "hit"
             route_hit(roster, player, msg)
@@ -360,6 +365,15 @@ module Termfront
         rescue StandardError
           nil
         end
+      end
+
+      def normalize_weapon(value)
+        return nil unless value.is_a?(String) || value.is_a?(Symbol)
+
+        name = value.to_s
+        return nil unless ALLOWED_MP_WEAPONS.include?(name)
+
+        name.to_sym
       end
 
       def match_timeout_reason(now, match_start, last_activity)
@@ -508,7 +522,8 @@ module Termfront
             player[:x] = msg[:x]
             player[:y] = msg[:y]
             player[:angle] = msg[:a]
-            player[:weapon] = msg[:w]&.to_sym || player[:weapon]
+            weapon = normalize_weapon(msg[:w])
+            player[:weapon] = weapon if weapon
             player[:ammo] = msg[:am] if msg.key?(:am)
             player[:fire_flash] = msg[:ff] || 0
           when "fire"

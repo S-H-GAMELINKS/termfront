@@ -295,6 +295,22 @@ class TestTermfront < Minitest::Test
                  server.instance_variable_get(:@wavesfight_queues)[key].size
   end
 
+  def test_normalize_weapon_accepts_whitelisted_names
+    server = Termfront::Network::Server.new
+    assert_equal :pistol, server.send(:normalize_weapon, "pistol")
+    assert_equal :ar, server.send(:normalize_weapon, "ar")
+    assert_equal :ar, server.send(:normalize_weapon, :ar)
+  end
+
+  def test_normalize_weapon_rejects_other_values
+    server = Termfront::Network::Server.new
+    assert_nil server.send(:normalize_weapon, "shock_rifle")
+    assert_nil server.send(:normalize_weapon, "bogus")
+    assert_nil server.send(:normalize_weapon, nil)
+    assert_nil server.send(:normalize_weapon, 42)
+    assert_nil server.send(:normalize_weapon, "")
+  end
+
   def test_match_timeout_reason_signals_ttl_after_max_duration
     server = Termfront::Network::Server.new
     now = 1000.0
