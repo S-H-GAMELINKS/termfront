@@ -341,6 +341,37 @@ class TestTermfront < Minitest::Test
     refute server.send(:valid_position?, { x: nil, y: 1.5, a: 0.0 }, map)
   end
 
+  def test_position_delta_acceptable_within_speed_limit
+    server = Termfront::Network::Server.new
+    now = 100.0
+    # 0.033 sec at MOVE_SPEED (6 m/s) * 1.5 margin = 0.297 m max
+    assert server.send(:position_delta_acceptable?, 5.0, 5.0, now - 0.033, 5.1, 5.1, now)
+  end
+
+  def test_position_delta_acceptable_rejects_teleport
+    server = Termfront::Network::Server.new
+    now = 100.0
+    refute server.send(:position_delta_acceptable?, 5.0, 5.0, now - 0.033, 15.0, 15.0, now),
+           "teleport beyond MOVE_SPEED*dt*margin must be rejected"
+  end
+
+  def test_position_delta_acceptable_caps_dt
+    server = Termfront::Network::Server.new
+    now = 100.0
+    # Even if prev_at is far in the past, dt is capped at MAX_STATE_DT
+    # max_step = MOVE_SPEED * MAX_STATE_DT * margin = 6 * 0.5 * 1.5 = 4.5 m
+    refute server.send(:position_delta_acceptable?, 5.0, 5.0, now - 60.0, 15.0, 15.0, now),
+           "long prev_at must not allow arbitrary teleport (dt is capped)"
+  end
+
+  def test_position_delta_acceptable_first_state_bounded
+    server = Termfront::Network::Server.new
+    now = 100.0
+    # First state (prev_at: nil) uses dt = 0.1 → max_step = 0.9 m
+    assert server.send(:position_delta_acceptable?, 5.0, 5.0, nil, 5.5, 5.5, now)
+    refute server.send(:position_delta_acceptable?, 5.0, 5.0, nil, 10.0, 10.0, now)
+  end
+
   def test_validate_float_enforces_range_and_type
     server = Termfront::Network::Server.new
 

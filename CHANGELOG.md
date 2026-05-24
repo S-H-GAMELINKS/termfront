@@ -24,6 +24,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Validate enemy / weapon / projectile type symbols received from the server against a fixed whitelist on the client side before converting to symbols
 - Validate position, ammo, and fire-flash fields on Wavesfight co-op state messages; reject the update when position is non-finite or outside the map
 - Validate PvP state fields (position, shield, health, ammo, fire-flash) before relaying to opponents; drop the relay when position is non-finite or outside the map
+- Reject multiplayer state messages whose position delta exceeds the maximum physical step from the previous server-known position
 
 ### Added
 

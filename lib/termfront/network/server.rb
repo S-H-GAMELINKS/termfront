@@ -14,6 +14,8 @@ module Termfront
       MATCH_MAX_DURATION = 30 * 60
       MATCH_IDLE_TIMEOUT = 5 * 60
       ALLOWED_MP_WEAPONS = %w[pistol ar].freeze
+      MAX_STATE_DT = 0.5
+      POSITION_DELTA_MARGIN = 1.5
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -221,11 +223,16 @@ module Termfront
 
         roster = players.each_with_index.map do |entry, idx|
           team = idx < team_size ? 0 : 1
+          spawn = pvp_spawns[idx]
           {
             id: idx,
             team: team,
             socket: entry[:socket],
-            spawn: pvp_spawns[idx],
+            spawn: spawn,
+            x: spawn[0],
+            y: spawn[1],
+            angle: spawn[2],
+            last_state_at: nil,
             buf: +"",
             alive: true
           }
@@ -315,6 +322,17 @@ module Termfront
             send_json(player[:socket], { t: "pong", ts: msg[:ts] })
           when "state"
             next unless valid_position?(msg, pvp_map)
+
+            now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            new_x = msg[:x].to_f
+            new_y = msg[:y].to_f
+            next unless position_delta_acceptable?(player[:x], player[:y], player[:last_state_at],
+                                                  new_x, new_y, now)
+
+            player[:x] = new_x
+            player[:y] = new_y
+            player[:angle] = msg[:a].to_f
+            player[:last_state_at] = now
 
             if msg.key?(:w)
               weapon = normalize_weapon(msg[:w])
@@ -410,6 +428,19 @@ module Termfront
         int
       end
 
+      def position_delta_acceptable?(prev_x, prev_y, prev_at, new_x, new_y, now)
+        dt = if prev_at.nil?
+               0.1
+             else
+               [now - prev_at, MAX_STATE_DT].min
+             end
+        return true if dt <= 0
+
+        max_step = Config::MOVE_SPEED * dt * POSITION_DELTA_MARGIN
+        delta_sq = (new_x - prev_x)**2 + (new_y - prev_y)**2
+        delta_sq <= max_step * max_step
+      end
+
       def validate_float(value, min:, max:)
         return nil unless value.is_a?(Numeric) && value.to_f.finite?
 
@@ -469,6 +500,7 @@ module Termfront
             shield: Config::SHIELD_MAX,
             health: Config::HEALTH_MAX,
             last_damage: -Config::SHIELD_DELAY,
+            last_state_at: nil,
             weapon: :ar,
             ammo: 60,
             fire_flash: 0,
@@ -573,9 +605,15 @@ module Termfront
           when "state"
             next unless valid_position?(msg, session[:map])
 
-            player[:x] = msg[:x].to_f
-            player[:y] = msg[:y].to_f
+            new_x = msg[:x].to_f
+            new_y = msg[:y].to_f
+            next unless position_delta_acceptable?(player[:x], player[:y], player[:last_state_at],
+                                                  new_x, new_y, session[:clock])
+
+            player[:x] = new_x
+            player[:y] = new_y
             player[:angle] = msg[:a].to_f
+            player[:last_state_at] = session[:clock]
             weapon = normalize_weapon(msg[:w])
             player[:weapon] = weapon if weapon
             if msg.key?(:am)
