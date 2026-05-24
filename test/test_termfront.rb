@@ -150,7 +150,22 @@ class TestTermfront < Minitest::Test
     payload = JSON.parse(enemy_socket.writes.first, symbolize_names: true)
     assert_equal :hit, payload[:t].to_sym
     assert_equal 0, payload[:from]
-    assert_equal 25, payload[:d]
+    assert_equal Termfront::Config::PVP_HIT_DMG, payload[:d]
+  end
+
+  def test_pvp_server_ignores_client_supplied_damage
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+
+    roster = [
+      { id: 0, team: 0, alive: true, socket: FakeSocket.new([]) },
+      { id: 1, team: 1, alive: true, socket: enemy_socket }
+    ]
+
+    server.send(:route_hit, roster, roster[0], { target: 1, d: 999_999 })
+    payload = JSON.parse(enemy_socket.writes.first, symbolize_names: true)
+    assert_equal Termfront::Config::PVP_HIT_DMG, payload[:d],
+                 "server must not relay attacker-controlled damage values"
   end
 
   FakeEnemy = Struct.new(:alive, :x, :y) do
