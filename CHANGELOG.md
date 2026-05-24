@@ -13,6 +13,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Enforce TLS 1.2 as the minimum protocol version on both the multiplayer server and client
 - Stop logging client peer IP addresses on the multiplayer server
 - Connect multiplayer clients to the official server address only; remove the free-form server address input
+- Restrict audio manifest entries to paths under `data/audio/`
 
 ### Fixed
 

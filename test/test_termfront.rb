@@ -236,6 +236,29 @@ class TestTermfront < Minitest::Test
     assert_equal Termfront::Config::SHIELD_MAX - 10, player[:shield]
   end
 
+  def test_audio_manager_rejects_paths_outside_data_audio
+    manager = Termfront::AudioManager.new
+    manager.instance_variable_set(:@manifest, {
+                                    "bgm" => { "evil" => "../../../etc/passwd" },
+                                    "se" => { "absolute" => "/etc/passwd" }
+                                  })
+
+    assert_nil manager.send(:asset_path, :bgm, :evil),
+               "manifest must not resolve relative paths that escape the audio directory"
+    assert_nil manager.send(:asset_path, :se, :absolute),
+               "manifest must not resolve absolute paths outside data/audio"
+  end
+
+  def test_audio_manager_accepts_valid_data_audio_path
+    manager = Termfront::AudioManager.new
+    manager.instance_variable_set(:@manifest, {
+                                    "bgm" => { "title" => "data/audio/title.mp3" }
+                                  })
+    path = manager.send(:asset_path, :bgm, :title)
+    refute_nil path
+    assert path.end_with?("data/audio/title.mp3")
+  end
+
   def test_pvp_server_spawns_are_walkable
     server = Termfront::Network::Server.new
     map = Termfront::Map.new(Termfront::Network::Server::PVP_MAP)

@@ -170,10 +170,14 @@ module Termfront
 
     def asset_path(kind, name)
       relative = @manifest.fetch(kind.to_s, {})[name.to_s]
-      return unless relative
+      return unless relative.is_a?(String) && !relative.empty?
 
+      root = File.expand_path("../../data/audio", __dir__)
       path = File.expand_path("../../#{relative}", __dir__)
-      File.file?(path) ? path : nil
+      return unless path.start_with?(root + File::SEPARATOR)
+      return unless File.file?(path)
+
+      path
     end
 
     def spawn_player(player, path, loop_playback:, detach: false)
