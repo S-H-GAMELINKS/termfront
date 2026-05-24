@@ -11,6 +11,8 @@ module Termfront
       MAX_QUEUE_PER_MODE = 64
       QUEUE_HANDSHAKE_TIMEOUT = 5
       MAX_MSG_BYTES = 16 * 1024
+      MATCH_MAX_DURATION = 30 * 60
+      MATCH_IDLE_TIMEOUT = 5 * 60
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -239,6 +241,9 @@ module Termfront
                     })
         end
 
+        match_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        last_activity = match_start
+
         loop do
           sockets = roster.filter_map do |player|
             sock = player[:socket]
@@ -249,7 +254,18 @@ module Termfront
           break if sockets.empty?
 
           readable, = IO.select(sockets, nil, nil, 0.5)
+
+          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          if (reason = match_timeout_reason(now, match_start, last_activity))
+            broadcast(roster, { t: "match_end", reason: reason })
+            close_players(roster)
+            puts "Match ended (#{reason})."
+            return
+          end
+
           next unless readable
+
+          last_activity = now
 
           readable.each do |sock|
             player = roster.find { |entry| entry[:socket] == sock }
@@ -346,6 +362,13 @@ module Termfront
         end
       end
 
+      def match_timeout_reason(now, match_start, last_activity)
+        return "match_ttl" if now - match_start > MATCH_MAX_DURATION
+        return "idle" if now - last_activity > MATCH_IDLE_TIMEOUT
+
+        nil
+      end
+
       def supervise_match(match_players)
         yield
       rescue StandardError => e
@@ -408,11 +431,19 @@ module Termfront
                     })
         end
 
+        match_start = session[:clock]
+        last_activity = match_start
         last_broadcast = session[:clock]
         loop do
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           dt = now - session[:clock]
           session[:clock] = now
+
+          if (reason = match_timeout_reason(now, match_start, last_activity))
+            broadcast(roster, { t: "match_end", reason: reason })
+            close_players(roster)
+            return
+          end
 
           sockets = roster.filter_map do |player|
             sock = player[:socket]
@@ -424,6 +455,7 @@ module Termfront
 
           readable, = IO.select(sockets, nil, nil, 0.01)
           if readable
+            last_activity = now
             readable.each do |sock|
               player = roster.find { |entry| entry[:socket] == sock }
               next unless player

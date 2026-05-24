@@ -295,6 +295,30 @@ class TestTermfront < Minitest::Test
                  server.instance_variable_get(:@wavesfight_queues)[key].size
   end
 
+  def test_match_timeout_reason_signals_ttl_after_max_duration
+    server = Termfront::Network::Server.new
+    now = 1000.0
+    started = now - Termfront::Network::Server::MATCH_MAX_DURATION - 1
+
+    assert_equal "match_ttl", server.send(:match_timeout_reason, now, started, now)
+  end
+
+  def test_match_timeout_reason_signals_idle_after_idle_timeout
+    server = Termfront::Network::Server.new
+    now = 1000.0
+    started = now - 10
+    stale = now - Termfront::Network::Server::MATCH_IDLE_TIMEOUT - 1
+
+    assert_equal "idle", server.send(:match_timeout_reason, now, started, stale)
+  end
+
+  def test_match_timeout_reason_returns_nil_during_active_match
+    server = Termfront::Network::Server.new
+    now = 1000.0
+
+    assert_nil server.send(:match_timeout_reason, now, now - 5, now - 1)
+  end
+
   def test_supervise_match_catches_exception_and_closes_sockets
     server = Termfront::Network::Server.new
     sock = CloseableSocket.new(false)
