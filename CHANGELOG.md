@@ -16,6 +16,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Restrict audio manifest entries to paths under `data/audio/`
 - Reject Wavesfight co-op queue requests with unknown mission ids
 
+### Added
+
+- Honor `TERMFRONT_TLS_CA_FILE` on multiplayer clients to trust an additional CA certificate
+
 ### Fixed
 
 - Wavesfight co-op shield no longer stays depleted: the server now regenerates shield and health after `Config::SHIELD_DELAY`, and the client plays the shield regeneration loop SE while regen is active

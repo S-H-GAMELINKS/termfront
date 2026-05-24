@@ -17,7 +17,7 @@ module Termfront
 
         host, port = Config::PVP_DEFAULT_ADDRESS.split(":", 2).then { |h, p| [h, p.to_i] }
         begin
-          @conn.connect(host, port)
+          @conn.connect(host, port, ca_file: ENV["TERMFRONT_TLS_CA_FILE"])
           @conn.send_msg({ t: "queue", mode: "wavesfight", mission_id: mission_id, difficulty: difficulty })
         rescue StandardError => e
           show_error("Connection failed: #{e.message}")
