@@ -3,6 +3,7 @@
 require "test_helper"
 require "tmpdir"
 require "openssl"
+require "json"
 
 class TestNetworkSecurity < Minitest::Test
   def test_connection_uses_peer_and_hostname_verification
@@ -46,6 +47,34 @@ class TestNetworkSecurity < Minitest::Test
       assert_equal false, default_store.verify(cert)
       assert_equal true, custom_store.verify(cert)
     end
+  end
+
+  def test_read_queue_request_rejects_unknown_mission_id
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", mode: "wavesfight", mission_id: "bogus", difficulty: 0 }) + "\n")
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_nil result, "unknown wavesfight mission_id must be rejected"
+  ensure
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_accepts_known_mission_id
+    known_id = Termfront::Mission::Base.wavesfight.first.new.id
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", mode: "wavesfight", mission_id: known_id, difficulty: 1 }) + "\n")
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_equal :wavesfight, result[:mode]
+    assert_equal known_id, result[:mission_id]
+  ensure
+    reader&.close
+    writer&.close
   end
 
   def test_self_signed_server_certificate_is_not_trusted_by_default_store

@@ -154,9 +154,12 @@ module Termfront
             next unless msg[:t] == "queue"
 
             if msg[:mode].to_s == "wavesfight"
+              mission_id = msg[:mission_id].to_s
+              return nil unless wavesfight_mission_ids.include?(mission_id)
+
               return {
                 mode: :wavesfight,
-                mission_id: msg[:mission_id].to_s,
+                mission_id: mission_id,
                 difficulty: [[msg[:difficulty].to_i, 0].max, Enemy::Base::DIFFICULTIES.size - 1].min
               }
             end
@@ -604,6 +607,10 @@ module Termfront
         key = OpenSSL::PKey::RSA.new(File.read(key_file))
         puts "Loaded TLS certificate."
         [cert, key, chain]
+      end
+
+      def wavesfight_mission_ids
+        @wavesfight_mission_ids ||= Mission::Base.wavesfight.map { |klass| klass.new.id }.freeze
       end
 
       def pvp_spawns
