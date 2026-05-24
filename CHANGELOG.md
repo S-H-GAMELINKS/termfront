@@ -25,6 +25,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Validate position, ammo, and fire-flash fields on Wavesfight co-op state messages; reject the update when position is non-finite or outside the map
 - Validate PvP state fields (position, shield, health, ammo, fire-flash) before relaying to opponents; drop the relay when position is non-finite or outside the map
 - Reject multiplayer state messages whose position delta exceeds the maximum physical step from the previous server-known position
+- Rate-limit incoming multiplayer messages per type per player; sustained overflow ends the match for the offending client
 
 ### Added
 

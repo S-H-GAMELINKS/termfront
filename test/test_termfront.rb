@@ -341,6 +341,51 @@ class TestTermfront < Minitest::Test
     refute server.send(:valid_position?, { x: nil, y: 1.5, a: 0.0 }, map)
   end
 
+  def test_allow_message_within_limit
+    server = Termfront::Network::Server.new
+    player = {}
+    now = 100.0
+    limit = Termfront::Network::Server::RATE_LIMITS["hit"]
+
+    limit.times do
+      assert server.send(:allow_message, player, "hit", now)
+    end
+  end
+
+  def test_allow_message_drops_excess
+    server = Termfront::Network::Server.new
+    player = {}
+    now = 100.0
+    limit = Termfront::Network::Server::RATE_LIMITS["hit"]
+
+    limit.times { server.send(:allow_message, player, "hit", now) }
+    refute server.send(:allow_message, player, "hit", now),
+           "messages beyond the per-second limit must be rejected"
+  end
+
+  def test_allow_message_refills_after_a_second
+    server = Termfront::Network::Server.new
+    player = {}
+    limit = Termfront::Network::Server::RATE_LIMITS["hit"]
+
+    limit.times { server.send(:allow_message, player, "hit", 100.0) }
+    refute server.send(:allow_message, player, "hit", 100.0)
+    assert server.send(:allow_message, player, "hit", 101.0),
+           "tokens should refill over time"
+  end
+
+  def test_allow_message_buckets_are_independent_per_type
+    server = Termfront::Network::Server.new
+    player = {}
+    now = 100.0
+    state_limit = Termfront::Network::Server::RATE_LIMITS["state"]
+
+    state_limit.times { server.send(:allow_message, player, "state", now) }
+    refute server.send(:allow_message, player, "state", now)
+    assert server.send(:allow_message, player, "hit", now),
+           "hit bucket is independent of state bucket"
+  end
+
   def test_position_delta_acceptable_within_speed_limit
     server = Termfront::Network::Server.new
     now = 100.0

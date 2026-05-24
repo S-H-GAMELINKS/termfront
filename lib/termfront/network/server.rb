@@ -16,6 +16,15 @@ module Termfront
       ALLOWED_MP_WEAPONS = %w[pistol ar].freeze
       MAX_STATE_DT = 0.5
       POSITION_DELTA_MARGIN = 1.5
+      RATE_LIMITS = {
+        "state" => 60,
+        "hit"   => 20,
+        "fire"  => 20,
+        "ping"  => 5,
+        "dead"  => 5
+      }.freeze
+      DEFAULT_RATE_LIMIT = 10
+      MAX_DROPPED_MSGS = 200
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -287,7 +296,12 @@ module Termfront
                 puts "Match aborted."
                 return
               end
-              consume_messages(roster, player)
+              if consume_messages(roster, player) == :rate_limit_exceeded
+                broadcast(roster, { t: "match_end", reason: "disconnect", player_id: player[:id] }, except: player[:id])
+                close_players(roster)
+                puts "Match aborted (rate limit)."
+                return
+              end
             rescue IO::WaitReadable
               next
             rescue EOFError, Errno::ECONNRESET, Errno::EPIPE, IOError, OpenSSL::SSL::SSLError
@@ -314,6 +328,13 @@ module Termfront
           begin
             msg = JSON.parse(line, symbolize_names: true)
           rescue JSON::ParserError
+            next
+          end
+
+          unless allow_message(player, msg[:t].to_s, Process.clock_gettime(Process::CLOCK_MONOTONIC))
+            player[:dropped_msgs] = (player[:dropped_msgs] || 0) + 1
+            return :rate_limit_exceeded if player[:dropped_msgs] > MAX_DROPPED_MSGS
+
             next
           end
 
@@ -426,6 +447,21 @@ module Termfront
         return nil if int < min || int > max
 
         int
+      end
+
+      def allow_message(player, msg_type, now)
+        limit = RATE_LIMITS[msg_type] || DEFAULT_RATE_LIMIT
+        buckets = (player[:rate_buckets] ||= {})
+        bucket = (buckets[msg_type] ||= { tokens: limit.to_f, last_refill: now })
+
+        elapsed = now - bucket[:last_refill]
+        bucket[:tokens] = [bucket[:tokens] + elapsed * limit, limit.to_f].min
+        bucket[:last_refill] = now
+
+        return false if bucket[:tokens] < 1.0
+
+        bucket[:tokens] -= 1.0
+        true
       end
 
       def position_delta_acceptable?(prev_x, prev_y, prev_at, new_x, new_y, now)
@@ -565,7 +601,11 @@ module Termfront
                   close_players(roster)
                   return
                 end
-                consume_wavesfight_messages(roster, session, player)
+                if consume_wavesfight_messages(roster, session, player) == :rate_limit_exceeded
+                  broadcast(roster, { t: "match_end", reason: "disconnect", player_id: player[:id] }, except: player[:id])
+                  close_players(roster)
+                  return
+                end
               rescue IO::WaitReadable
                 next
               rescue EOFError, Errno::ECONNRESET, Errno::EPIPE, IOError, OpenSSL::SSL::SSLError
@@ -596,6 +636,13 @@ module Termfront
           begin
             msg = JSON.parse(line, symbolize_names: true)
           rescue JSON::ParserError
+            next
+          end
+
+          unless allow_message(player, msg[:t].to_s, session[:clock])
+            player[:dropped_msgs] = (player[:dropped_msgs] || 0) + 1
+            return :rate_limit_exceeded if player[:dropped_msgs] > MAX_DROPPED_MSGS
+
             next
           end
 
