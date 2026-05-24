@@ -19,17 +19,6 @@
       "id": "final_push_outro",
       "trigger": { "type": "mission_complete" },
       "actions": [
-        {
-          "type": "demo",
-          "duration": 3.0,
-          "caption": "ARCHIVE VAULT / SIGNAL STILL PRESENT",
-          "path": [
-            { "x": 20.5, "y": 9.5, "angle": 3.14, "t": 0.0 },
-            { "x": 16.5, "y": 9.5, "angle": 3.05, "t": 1.0 },
-            { "x": 11.5, "y": 9.5, "angle": 2.95, "t": 2.0 },
-            { "x": 7.5, "y": 8.5, "angle": 2.75, "t": 3.0 }
-          ]
-        },
         { "type": "title_card", "text": "FORTRESS CLEARED\nSIGNAL SOURCE UNRESOLVED" },
         { "type": "dialogue", "speaker": "OPS", "text": "Fortress cleared. The signal is still active somewhere below you." },
         { "type": "dialogue", "speaker": "OPS", "text": "This facility did not fail containment. Someone revoked it." },

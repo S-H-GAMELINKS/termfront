@@ -33,7 +33,7 @@ module Termfront
           [10.5, 9.5, 10.5, 8.5, :crawler],
           [18.5, 2.5, 18.5, 5.5, :executor],
           [22.5, 8.5, 22.5, 10.5, :executor],
-          [16.5, 9.5, 16.5, 8.5, :crawler]
+          [15.5, 9.5, 15.5, 8.5, :crawler]
         ]
       end
     end

@@ -62,6 +62,18 @@ class TestTermfront < Minitest::Test
     assert_equal :service_hub, terminals.first[:id]
   end
 
+  def test_mission_enemy_waypoints_are_walkable
+    (Termfront::Mission::Base.campaign + Termfront::Mission::Base.wavesfight).uniq.each do |mission_klass|
+      mission = mission_klass.new
+      map = mission.build_map
+      mission.enemy_defs.each_with_index do |enemy_def, idx|
+        sx, sy, ax, ay, _type = enemy_def
+        refute map.blocked?(sx, sy), "#{mission.id} enemy #{idx} spawn (#{sx}, #{sy}) is blocked"
+        refute map.blocked?(ax, ay), "#{mission.id} enemy #{idx} patrol target (#{ax}, #{ay}) is blocked"
+      end
+    end
+  end
+
   def test_wavesfight_missions_are_registered
     wavesfight = Termfront::Mission::Base.wavesfight
 

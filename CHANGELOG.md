@@ -38,6 +38,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 - Wavesfight co-op shield no longer stays depleted: the server now regenerates shield and health after `Config::SHIELD_DELAY`, and the client plays the shield regeneration loop SE while regen is active
 - Wavesfight co-op now restores shield, health, and revives downed players between waves to match singleplayer behavior
+- Final Push: relocated the rightmost crawler off the dividing wall so it can be killed and the mission can complete
+- Final Push: removed the post-clear demo flythrough so the mission proceeds straight to the outro dialogue
 
 ### Added (co-op gameplay)
 
