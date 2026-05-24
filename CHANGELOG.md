@@ -39,6 +39,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Wavesfight co-op shield no longer stays depleted: the server now regenerates shield and health after `Config::SHIELD_DELAY`, and the client plays the shield regeneration loop SE while regen is active
 - Wavesfight co-op now restores shield, health, and revives downed players between waves to match singleplayer behavior
 
+### Added (co-op gameplay)
+
+- Wavesfight co-op now generates weapon drops when enemies are killed; the `E` key picks up the nearest drop within `Config::PICKUP_RADIUS`, swapping the current weapon (which is dropped at the player's position) and tracking obtained weapons per-player so cheaters cannot claim weapons they have not picked up
+
 ## [0.1.3] - 2026-05-24
 
 ### Fixed

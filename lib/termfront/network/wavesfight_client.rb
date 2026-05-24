@@ -3,7 +3,7 @@
 module Termfront
   module Network
     class WavesfightClient
-      ALLOWED_WEAPONS = %w[pistol ar].freeze
+      ALLOWED_WEAPONS = %w[pistol ar shock_pistol shock_rifle].freeze
       ALLOWED_ENEMY_TYPES = %w[crawler executor].freeze
 
       def initialize(stdout)
@@ -107,6 +107,8 @@ module Termfront
         end
         @enemies = []
         @projectiles = []
+        @drops = []
+        @server_drops = []
         @match_end = nil
         @regen_active = false
       end
@@ -152,6 +154,7 @@ module Termfront
 
       def handle_player_actions(keys)
         @player.swap_weapon if keys.include?(:t)
+        send_pickup_request if keys.include?(:e)
 
         return unless keys.include?(:space)
 
@@ -164,6 +167,28 @@ module Termfront
         @player.last_fire = @player.game_time
         @audio.play_se(:shoot)
         @conn.send_msg({ t: "fire" })
+      end
+
+      def send_pickup_request
+        nearest = nearest_drop_in_range
+        return unless nearest
+
+        @conn.send_msg({ t: "pickup", id: nearest[:id] })
+      end
+
+      def nearest_drop_in_range
+        best = nil
+        best_d2 = Config::PICKUP_RADIUS**2
+        @server_drops.each do |drop|
+          dx = drop[:x] - @player.x
+          dy = drop[:y] - @player.y
+          d2 = dx * dx + dy * dy
+          if d2 < best_d2
+            best = drop
+            best_d2 = d2
+          end
+        end
+        best
       end
 
       def update_local(dt)
@@ -242,6 +267,7 @@ module Termfront
             @player.shield = entry[:s]
             @player.health = entry[:h]
             @player.dead = !entry[:alive]
+            sync_own_weapon(entry)
             update_regen_audio(prev_shield)
           else
             remote = @remote_players[entry[:id]]
@@ -281,6 +307,29 @@ module Termfront
           next unless type
 
           Projectile.new(x: projectile[:x], y: projectile[:y], vx: 0.0, vy: 0.0, type: type)
+        end
+
+        @server_drops = (msg[:drops] || []).filter_map do |raw|
+          drop_type = safe_weapon(raw[:type])
+          next unless drop_type
+          next unless raw[:id].is_a?(Numeric)
+
+          { id: raw[:id], x: raw[:x].to_f, y: raw[:y].to_f, type: drop_type, ammo: raw[:am].to_i }
+        end
+        @drops = @server_drops.map do |drop|
+          DropItem::Weapon.new(x: drop[:x], y: drop[:y], type: drop[:type], ammo: drop[:ammo])
+        end
+      end
+
+      def sync_own_weapon(entry)
+        weapon_sym = safe_weapon(entry[:w])
+        return unless weapon_sym
+
+        current = @player.current_weapon
+        if current.type_id != weapon_sym
+          @player.weapons[@player.weapon_idx] = Weapon::Base.build(weapon_sym, entry[:am])
+        elsif entry.key?(:am) && current.respond_to?(:ammo=)
+          current.ammo = entry[:am]
         end
       end
 
@@ -323,7 +372,7 @@ module Termfront
           map: @map,
           enemies: @enemies,
           projectiles: @projectiles,
-          drops: [],
+          drops: @drops,
           terminals: [],
           status_line: status,
           allies: allies

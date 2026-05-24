@@ -3,6 +3,7 @@
 require "socket"
 require "openssl"
 require "json"
+require "set"
 
 module Termfront
   module Network
@@ -13,15 +14,17 @@ module Termfront
       MAX_MSG_BYTES = 16 * 1024
       MATCH_MAX_DURATION = 30 * 60
       MATCH_IDLE_TIMEOUT = 5 * 60
-      ALLOWED_MP_WEAPONS = %w[pistol ar].freeze
+      ALLOWED_MP_WEAPONS = %w[pistol ar shock_pistol shock_rifle].freeze
+      INITIAL_OBTAINED_WEAPONS = %i[pistol ar].freeze
       MAX_STATE_DT = 0.5
       POSITION_DELTA_MARGIN = 1.5
       RATE_LIMITS = {
-        "state" => 60,
-        "hit"   => 20,
-        "fire"  => 20,
-        "ping"  => 5,
-        "dead"  => 5
+        "state"  => 60,
+        "hit"    => 20,
+        "fire"   => 20,
+        "pickup" => 5,
+        "ping"   => 5,
+        "dead"   => 5
       }.freeze
       DEFAULT_RATE_LIMIT = 10
       MAX_DROPPED_MSGS = 200
@@ -248,6 +251,7 @@ module Termfront
             last_damage: -Config::SHIELD_DELAY,
             weapon: :ar,
             last_hit_at: nil,
+            obtained_weapons: Set.new(INITIAL_OBTAINED_WEAPONS),
             buf: +"",
             alive: true
           }
@@ -367,7 +371,7 @@ module Termfront
             player[:last_state_at] = now
 
             if msg.key?(:w)
-              weapon = normalize_weapon(msg[:w])
+              weapon = normalize_weapon(msg[:w], player)
               if weapon
                 player[:weapon] = weapon
                 msg = msg.merge(w: weapon.to_s)
@@ -545,13 +549,18 @@ module Termfront
         OpenSSL.fixed_length_secure_compare(provided, expected)
       end
 
-      def normalize_weapon(value)
+      def normalize_weapon(value, player = nil)
         return nil unless value.is_a?(String) || value.is_a?(Symbol)
 
         name = value.to_s
         return nil unless ALLOWED_MP_WEAPONS.include?(name)
 
-        name.to_sym
+        sym = name.to_sym
+        if player && player[:obtained_weapons] && !player[:obtained_weapons].include?(sym)
+          return nil
+        end
+
+        sym
       end
 
       def match_timeout_reason(now, match_start, last_activity)
@@ -598,6 +607,7 @@ module Termfront
             last_state_at: nil,
             weapon: :ar,
             ammo: 60,
+            obtained_weapons: Set.new(INITIAL_OBTAINED_WEAPONS),
             fire_flash: 0,
             alive: true
           }
@@ -610,6 +620,8 @@ module Termfront
           wave: 0,
           enemies: [],
           projectiles: [],
+          drops: [],
+          next_drop_id: 0,
           clock: Process.clock_gettime(Process::CLOCK_MONOTONIC)
         }
         start_wavesfight_wave(session, roster)
@@ -720,7 +732,7 @@ module Termfront
             player[:y] = new_y
             player[:angle] = msg[:a].to_f
             player[:last_state_at] = session[:clock]
-            weapon = normalize_weapon(msg[:w])
+            weapon = normalize_weapon(msg[:w], player)
             player[:weapon] = weapon if weapon
             if msg.key?(:am)
               ammo = validate_int(msg[:am], min: 0, max: 999)
@@ -731,8 +743,35 @@ module Termfront
           when "fire"
             player[:fire_flash] = 4
             process_wavesfight_fire(session, player)
+          when "pickup"
+            process_pickup(session, player, msg)
           end
         end
+      end
+
+      def process_pickup(session, player, msg)
+        drop_id = msg[:id]
+        return unless drop_id.is_a?(Numeric)
+
+        drop = session[:drops].find { |d| d[:id] == drop_id }
+        return unless drop
+
+        dx = drop[:x] - player[:x]
+        dy = drop[:y] - player[:y]
+        return if (dx * dx + dy * dy) > Config::PICKUP_RADIUS**2
+        return unless ALLOWED_MP_WEAPONS.include?(drop[:type].to_s)
+
+        if player[:weapon] == drop[:type]
+          weapon_klass = Weapon::Base.registry[drop[:type]]
+          max = weapon_klass&.new&.max_ammo
+          player[:ammo] = max ? [player[:ammo] + drop[:ammo], max].min : player[:ammo]
+        else
+          spawn_drop(session, player[:x], player[:y], player[:weapon], player[:ammo]) if player[:weapon]
+          player[:weapon] = drop[:type]
+          player[:ammo] = drop[:ammo]
+          player[:obtained_weapons] << drop[:type]
+        end
+        session[:drops].delete(drop)
       end
 
       def update_wavesfight_session(roster, session, dt)
@@ -801,6 +840,15 @@ module Termfront
         return unless best
 
         best.take_damage(1)
+        return if best.alive
+
+        spawn_drop(session, best.x, best.y, best.drop_type, best.drop_ammo)
+      end
+
+      def spawn_drop(session, x, y, type, ammo)
+        id = session[:next_drop_id]
+        session[:next_drop_id] += 1
+        session[:drops] << { id: id, x: x, y: y, type: type, ammo: ammo }
       end
 
       def enemy_damage(type)
@@ -855,7 +903,7 @@ module Termfront
             }
           end,
           projectiles: session[:projectiles].map { |projectile| { x: projectile.x, y: projectile.y, type: projectile.type } },
-          drops: []
+          drops: session[:drops].map { |drop| { id: drop[:id], x: drop[:x], y: drop[:y], type: drop[:type], am: drop[:ammo] } }
         }
         broadcast(roster, msg)
       end

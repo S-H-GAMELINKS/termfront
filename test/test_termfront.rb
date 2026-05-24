@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "stringio"
+require "set"
 
 class TestTermfront < Minitest::Test
   FakeSocket = Struct.new(:writes) do
@@ -336,6 +337,77 @@ class TestTermfront < Minitest::Test
                  "shield must stay flat while still within SHIELD_DELAY of last damage"
   end
 
+  def wavesfight_test_player_with_obtained(shield:, last_damage:)
+    base = wavesfight_test_player(shield: shield, last_damage: last_damage)
+    base[:weapon] = :ar
+    base[:ammo] = 60
+    base[:obtained_weapons] = Set.new(%i[pistol ar])
+    base
+  end
+
+  def test_wavesfight_server_spawn_drop_appends_to_session
+    server = Termfront::Network::Server.new
+    session = wavesfight_test_session(100.0)
+    session[:next_drop_id] = 0
+    session[:drops] = []
+
+    server.send(:spawn_drop, session, 5.0, 5.0, :shock_pistol, 60)
+    assert_equal 1, session[:drops].size
+    drop = session[:drops].first
+    assert_equal 0, drop[:id]
+    assert_equal :shock_pistol, drop[:type]
+    assert_equal 60, drop[:ammo]
+  end
+
+  def test_wavesfight_server_process_pickup_requires_proximity
+    server = Termfront::Network::Server.new
+    session = wavesfight_test_session(100.0)
+    session[:next_drop_id] = 1
+    session[:drops] = [{ id: 0, x: 10.0, y: 10.0, type: :shock_pistol, ammo: 60 }]
+
+    player = wavesfight_test_player_with_obtained(shield: 100.0, last_damage: -3.0)
+    player[:x] = 5.0
+    player[:y] = 5.0
+
+    server.send(:process_pickup, session, player, { id: 0 })
+    assert_equal 1, session[:drops].size, "drop must remain when player is too far"
+    assert_equal :ar, player[:weapon]
+  end
+
+  def test_wavesfight_server_process_pickup_swaps_weapon_and_drops_current
+    server = Termfront::Network::Server.new
+    session = wavesfight_test_session(100.0)
+    session[:next_drop_id] = 1
+    session[:drops] = [{ id: 0, x: 5.1, y: 5.1, type: :shock_pistol, ammo: 60 }]
+
+    player = wavesfight_test_player_with_obtained(shield: 100.0, last_damage: -3.0)
+    player[:x] = 5.0
+    player[:y] = 5.0
+
+    server.send(:process_pickup, session, player, { id: 0 })
+
+    assert_equal :shock_pistol, player[:weapon]
+    assert_equal 60, player[:ammo]
+    assert player[:obtained_weapons].include?(:shock_pistol)
+    refute session[:drops].any? { |d| d[:id] == 0 }, "picked-up drop must be removed"
+    refute_empty session[:drops], "previous weapon must be re-dropped at player position"
+    new_drop = session[:drops].last
+    assert_equal :ar, new_drop[:type]
+    assert_equal 60, new_drop[:ammo]
+  end
+
+  def test_normalize_weapon_respects_player_obtained_set
+    server = Termfront::Network::Server.new
+    player = { obtained_weapons: Set.new(%i[pistol ar]) }
+
+    assert_equal :ar, server.send(:normalize_weapon, "ar", player)
+    assert_nil server.send(:normalize_weapon, "shock_rifle", player),
+               "weapons outside the player's obtained set must be rejected"
+
+    player[:obtained_weapons] << :shock_rifle
+    assert_equal :shock_rifle, server.send(:normalize_weapon, "shock_rifle", player)
+  end
+
   def test_wavesfight_server_apply_damage_resets_last_damage
     server = Termfront::Network::Server.new
     player = {
@@ -414,7 +486,8 @@ class TestTermfront < Minitest::Test
     client = Termfront::Network::WavesfightClient.allocate
     assert_equal :ar, client.send(:safe_weapon, "ar")
     assert_equal :pistol, client.send(:safe_weapon, :pistol)
-    assert_nil client.send(:safe_weapon, "shock_rifle")
+    assert_equal :shock_rifle, client.send(:safe_weapon, "shock_rifle")
+    assert_equal :shock_pistol, client.send(:safe_weapon, :shock_pistol)
     assert_nil client.send(:safe_weapon, "bogus")
     assert_nil client.send(:safe_weapon, nil)
   end
@@ -565,7 +638,6 @@ class TestTermfront < Minitest::Test
 
   def test_normalize_weapon_rejects_other_values
     server = Termfront::Network::Server.new
-    assert_nil server.send(:normalize_weapon, "shock_rifle")
     assert_nil server.send(:normalize_weapon, "bogus")
     assert_nil server.send(:normalize_weapon, nil)
     assert_nil server.send(:normalize_weapon, 42)
