@@ -259,6 +259,30 @@ class TestTermfront < Minitest::Test
     assert path.end_with?("data/audio/title.mp3")
   end
 
+  CloseableSocket = Struct.new(:closed) do
+    def close
+      self.closed = true
+    end
+  end
+
+  def test_supervise_match_catches_exception_and_closes_sockets
+    server = Termfront::Network::Server.new
+    sock = CloseableSocket.new(false)
+    server.send(:supervise_match, [{ socket: sock }]) { raise "boom" }
+
+    assert_equal true, sock.closed,
+                 "supervise_match must close sockets even when the body raises"
+  end
+
+  def test_supervise_match_closes_sockets_on_normal_exit
+    server = Termfront::Network::Server.new
+    sock = CloseableSocket.new(false)
+    server.send(:supervise_match, [{ socket: sock }]) { :ok }
+
+    assert_equal true, sock.closed,
+                 "supervise_match must always close sockets via ensure"
+  end
+
   def test_pvp_server_spawns_are_walkable
     server = Termfront::Network::Server.new
     map = Termfront::Map.new(Termfront::Network::Server::PVP_MAP)

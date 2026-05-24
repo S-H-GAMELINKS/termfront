@@ -15,6 +15,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Connect multiplayer clients to the official server address only; remove the free-form server address input
 - Restrict audio manifest entries to paths under `data/audio/`
 - Reject Wavesfight co-op queue requests with unknown mission ids
+- Guard match worker threads against uncaught exceptions and ensure player sockets are closed
 
 ### Added
 

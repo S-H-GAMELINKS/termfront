@@ -107,7 +107,7 @@ module Termfront
         end
         return unless match_players
 
-        Thread.new { run_match(team_size, match_players) }
+        Thread.new { supervise_match(match_players) { run_match(team_size, match_players) } }
       end
 
       def enqueue_wavesfight_player(client, request)
@@ -127,7 +127,7 @@ module Termfront
         end
         return unless match_players
 
-        Thread.new { run_wavesfight_match(mission_id, difficulty, match_players) }
+        Thread.new { supervise_match(match_players) { run_wavesfight_match(mission_id, difficulty, match_players) } }
       end
 
       def read_queue_request(client)
@@ -297,6 +297,18 @@ module Termfront
       def close_players(roster)
         roster.each do |player|
           player[:socket].close
+        rescue StandardError
+          nil
+        end
+      end
+
+      def supervise_match(match_players)
+        yield
+      rescue StandardError => e
+        puts "Match thread crashed: #{e.class}"
+      ensure
+        match_players.each do |entry|
+          entry[:socket].close
         rescue StandardError
           nil
         end
