@@ -330,6 +330,7 @@ module Termfront
             angle: spawn[2],
             shield: Config::SHIELD_MAX,
             health: Config::HEALTH_MAX,
+            last_damage: -Config::SHIELD_DELAY,
             weapon: :ar,
             ammo: 60,
             fire_flash: 0,
@@ -346,7 +347,7 @@ module Termfront
           projectiles: [],
           clock: Process.clock_gettime(Process::CLOCK_MONOTONIC)
         }
-        start_wavesfight_wave(session)
+        start_wavesfight_wave(session, roster)
 
         roster.each do |player|
           send_json(player[:socket], {
@@ -434,6 +435,14 @@ module Termfront
       def update_wavesfight_session(roster, session, dt)
         roster.each do |player|
           player[:fire_flash] -= 1 if player[:fire_flash].to_i > 0
+          next unless player[:alive]
+
+          if player[:shield] < Config::SHIELD_MAX && (session[:clock] - player[:last_damage]) >= Config::SHIELD_DELAY
+            player[:shield] = [player[:shield] + Config::SHIELD_REGEN * dt, Config::SHIELD_MAX].min
+          end
+          if player[:shield] >= Config::SHIELD_MAX && player[:health] < Config::HEALTH_MAX
+            player[:health] = [player[:health] + Config::SHIELD_REGEN * dt, Config::HEALTH_MAX].min
+          end
         end
 
         session[:enemies].each do |enemy|
@@ -455,7 +464,7 @@ module Termfront
             target = roster.find { |player| player[:alive] && projectile.hit_player?(player[:x], player[:y]) }
             if target
               dmg = enemy_damage(projectile.type)
-              apply_wavesfight_damage(target, dmg)
+              apply_wavesfight_damage(target, dmg, session[:clock])
               send_json(target[:socket], { t: "hit", d: dmg })
               true
             else
@@ -465,7 +474,7 @@ module Termfront
         end
 
         if session[:enemies].all? { |enemy| !enemy.alive }
-          start_wavesfight_wave(session)
+          start_wavesfight_wave(session, roster)
           broadcast(roster, { t: "wave_start", wave: session[:wave], difficulty: session[:difficulty] })
         end
       end
@@ -503,7 +512,7 @@ module Termfront
         enemy_klass ? enemy_klass.allocate.send(:damage) : 10
       end
 
-      def apply_wavesfight_damage(player, amount)
+      def apply_wavesfight_damage(player, amount, clock)
         if player[:shield] > 0
           overflow = amount - player[:shield]
           player[:shield] = [player[:shield] - amount, 0].max
@@ -512,6 +521,7 @@ module Termfront
           player[:health] = [player[:health] - amount, 0].max
         end
 
+        player[:last_damage] = clock
         player[:alive] = false if player[:health] <= 0
       end
 
@@ -543,12 +553,22 @@ module Termfront
         broadcast(roster, msg)
       end
 
-      def start_wavesfight_wave(session)
+      def start_wavesfight_wave(session, roster = nil)
         session[:wave] += 1
         session[:difficulty] = [session[:difficulty], 1 + ((session[:wave] - 1) / 3)].max
         session[:difficulty] = [session[:difficulty], Enemy::Base::DIFFICULTIES.size - 1].min
         session[:enemies] = build_wavesfight_enemies(session[:mission], session[:wave], session[:difficulty])
         session[:projectiles].clear
+        replenish_wavesfight_roster(roster, session) if roster && session[:wave] > 1
+      end
+
+      def replenish_wavesfight_roster(roster, session)
+        roster.each do |player|
+          player[:shield] = [player[:shield] + 35.0, Config::SHIELD_MAX].min
+          player[:health] = [player[:health] + 20.0, Config::HEALTH_MAX].min
+          player[:last_damage] = session[:clock] - Config::SHIELD_DELAY
+          player[:alive] = true
+        end
       end
 
       def build_wavesfight_enemies(mission, wave, difficulty_index)

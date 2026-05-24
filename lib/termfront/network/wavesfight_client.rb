@@ -149,6 +149,7 @@ module Termfront
         @enemies = []
         @projectiles = []
         @match_end = nil
+        @regen_active = false
       end
 
       def run_game_loop
@@ -278,9 +279,11 @@ module Termfront
 
         msg[:players].each do |entry|
           if entry[:id] == @player_id
+            prev_shield = @player.shield
             @player.shield = entry[:s]
             @player.health = entry[:h]
             @player.dead = !entry[:alive]
+            update_regen_audio(prev_shield)
           else
             remote = @remote_players[entry[:id]]
             next unless remote
@@ -312,6 +315,19 @@ module Termfront
 
         @projectiles = msg[:projectiles].map do |projectile|
           Projectile.new(x: projectile[:x], y: projectile[:y], vx: 0.0, vy: 0.0, type: projectile[:type].to_sym)
+        end
+      end
+
+      def update_regen_audio(prev_shield)
+        regen_now = !@player.dead && @player.shield > prev_shield && @player.shield < Config::SHIELD_MAX
+        if regen_now
+          unless @regen_active
+            @audio.play_loop_se(:shield_regen)
+            @regen_active = true
+          end
+        elsif @regen_active
+          @audio.stop_loop_se(:shield_regen)
+          @regen_active = false
         end
       end
 
