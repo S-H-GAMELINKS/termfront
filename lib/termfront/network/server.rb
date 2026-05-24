@@ -314,9 +314,27 @@ module Termfront
           when "ping"
             send_json(player[:socket], { t: "pong", ts: msg[:ts] })
           when "state"
+            next unless valid_position?(msg, pvp_map)
+
             if msg.key?(:w)
               weapon = normalize_weapon(msg[:w])
               msg = weapon ? msg.merge(w: weapon.to_s) : msg.except(:w)
+            end
+            if msg.key?(:am)
+              ammo = validate_int(msg[:am], min: -1, max: 999)
+              msg = ammo ? msg.merge(am: ammo) : msg.except(:am)
+            end
+            if msg.key?(:ff)
+              ff = validate_int(msg[:ff], min: 0, max: 10)
+              msg = msg.merge(ff: ff || 0)
+            end
+            if msg.key?(:s)
+              shield = validate_float(msg[:s], min: 0, max: Config::SHIELD_MAX)
+              msg = shield ? msg.merge(s: shield) : msg.except(:s)
+            end
+            if msg.key?(:h)
+              health = validate_float(msg[:h], min: 0, max: Config::HEALTH_MAX)
+              msg = health ? msg.merge(h: health) : msg.except(:h)
             end
             broadcast(roster, msg.merge(from: player[:id]), except: player[:id])
           when "hit"
@@ -390,6 +408,15 @@ module Termfront
         return nil if int < min || int > max
 
         int
+      end
+
+      def validate_float(value, min:, max:)
+        return nil unless value.is_a?(Numeric) && value.to_f.finite?
+
+        f = value.to_f
+        return nil if f < min || f > max
+
+        f
       end
 
       def normalize_weapon(value)
@@ -752,12 +779,15 @@ module Termfront
         @wavesfight_mission_ids ||= Mission::Base.wavesfight.map { |klass| klass.new.id }.freeze
       end
 
+      def pvp_map
+        @pvp_map ||= Map.new(PVP_MAP)
+      end
+
       def pvp_spawns
         @pvp_spawns ||= begin
-          map = Map.new(PVP_MAP)
           PVP_SPAWN_CANDIDATES.each do |spawn|
             x, y, = spawn
-            raise "Invalid PvP spawn #{spawn.inspect}" if map.blocked?(x, y)
+            raise "Invalid PvP spawn #{spawn.inspect}" if pvp_map.blocked?(x, y)
           end
           PVP_SPAWN_CANDIDATES
         end

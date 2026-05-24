@@ -341,6 +341,17 @@ class TestTermfront < Minitest::Test
     refute server.send(:valid_position?, { x: nil, y: 1.5, a: 0.0 }, map)
   end
 
+  def test_validate_float_enforces_range_and_type
+    server = Termfront::Network::Server.new
+
+    assert_in_delta 0.0, server.send(:validate_float, 0, min: 0, max: 100), 1e-9
+    assert_in_delta 99.5, server.send(:validate_float, 99.5, min: 0, max: 100), 1e-9
+    assert_nil server.send(:validate_float, -0.1, min: 0, max: 100)
+    assert_nil server.send(:validate_float, 100.1, min: 0, max: 100)
+    assert_nil server.send(:validate_float, Float::INFINITY, min: 0, max: 100)
+    assert_nil server.send(:validate_float, "50", min: 0, max: 100)
+  end
+
   def test_validate_int_enforces_range_and_type
     server = Termfront::Network::Server.new
 
