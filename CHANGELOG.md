@@ -27,6 +27,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Reject multiplayer state messages whose position delta exceeds the maximum physical step from the previous server-known position
 - Rate-limit incoming multiplayer messages per type per player; sustained overflow ends the match for the offending client
 - Track PvP shield and health on the server; the server applies hit damage, regenerates shields between hits, and uses authoritative values when relaying state to opponents
+- Determine PvP hit targets server-side via raycast from the attacker's known position and facing; enforce weapon cooldown, firing cone, line-of-sight, and team checks instead of trusting the attacker-supplied target id
 
 ### Added
 

@@ -131,12 +131,18 @@ class TestTermfront < Minitest::Test
     assert_nil server.send(:winning_team, roster)
   end
 
-  def pvp_test_player(id:, team:, socket:)
+  def pvp_test_player(id:, team:, socket:, x: nil, y: nil, angle: nil)
+    defaults_x, defaults_y, defaults_a = id.zero? ? [3.0, 6.5, 0.0] : [16.0, 6.5, Math::PI]
     {
       id: id, team: team, socket: socket, alive: true,
       shield: Termfront::Config::SHIELD_MAX.to_f,
       health: Termfront::Config::HEALTH_MAX.to_f,
-      last_damage: -Termfront::Config::SHIELD_DELAY
+      last_damage: -Termfront::Config::SHIELD_DELAY,
+      x: x || defaults_x,
+      y: y || defaults_y,
+      angle: angle || defaults_a,
+      weapon: :ar,
+      last_hit_at: nil
     }
   end
 
@@ -214,6 +220,67 @@ class TestTermfront < Minitest::Test
     death_msg = attacker_socket.writes.map { |w| JSON.parse(w, symbolize_names: true) }.find { |m| m[:t] == "dead" }
     refute_nil death_msg, "attacker must be notified via dead broadcast when target dies"
     assert_equal 1, death_msg[:from]
+  end
+
+  def test_pvp_server_picks_target_via_raycast_ignoring_msg_target
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+    roster = [
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 1, socket: enemy_socket)
+    ]
+
+    server.send(:route_hit, roster, roster[0], { target: 999 }, 0.0)
+    refute_empty enemy_socket.writes,
+                 "raycast must find target based on attacker facing, not on msg[:target]"
+  end
+
+  def test_pvp_server_rejects_hits_outside_attacker_cone
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+    attacker = pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([]),
+                               angle: -Math::PI / 2) # facing up, not toward enemy
+    target = pvp_test_player(id: 1, team: 1, socket: enemy_socket)
+
+    server.send(:route_hit, [attacker, target], attacker, {}, 0.0)
+    assert_empty enemy_socket.writes,
+                 "target outside attacker firing cone must not be hit"
+  end
+
+  def test_pvp_server_blocks_hits_behind_walls
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+    # PVP_MAP row 4: "#..##........##....#" — walls between attacker and target
+    attacker = pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([]),
+                               x: 5.5, y: 4.5, angle: 0.0)
+    target = pvp_test_player(id: 1, team: 1, socket: enemy_socket,
+                             x: 16.5, y: 4.5)
+
+    server.send(:route_hit, [attacker, target], attacker, {}, 0.0)
+    assert_empty enemy_socket.writes,
+                 "target behind a wall must not be hit"
+  end
+
+  def test_pvp_server_enforces_weapon_cooldown_on_hits
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+    roster = [
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 1, socket: enemy_socket)
+    ]
+    cooldown = Termfront::Weapon::Base.build(:ar).cooldown
+
+    server.send(:route_hit, roster, roster[0], {}, 100.0)
+    refute_empty enemy_socket.writes
+    after_first = enemy_socket.writes.size
+
+    server.send(:route_hit, roster, roster[0], {}, 100.0 + cooldown * 0.5)
+    assert_equal after_first, enemy_socket.writes.size,
+                 "second hit within weapon cooldown must be dropped"
+
+    server.send(:route_hit, roster, roster[0], {}, 100.0 + cooldown + 0.01)
+    assert_equal after_first + 1, enemy_socket.writes.size,
+                 "hit after cooldown must be applied"
   end
 
   FakeEnemy = Struct.new(:alive, :x, :y) do

@@ -245,6 +245,8 @@ module Termfront
             shield: Config::SHIELD_MAX.to_f,
             health: Config::HEALTH_MAX.to_f,
             last_damage: -Config::SHIELD_DELAY,
+            weapon: :ar,
+            last_hit_at: nil,
             buf: +"",
             alive: true
           }
@@ -365,7 +367,12 @@ module Termfront
 
             if msg.key?(:w)
               weapon = normalize_weapon(msg[:w])
-              msg = weapon ? msg.merge(w: weapon.to_s) : msg.except(:w)
+              if weapon
+                player[:weapon] = weapon
+                msg = msg.merge(w: weapon.to_s)
+              else
+                msg = msg.except(:w)
+              end
             end
             if msg.key?(:am)
               ammo = validate_int(msg[:am], min: -1, max: 999)
@@ -386,18 +393,48 @@ module Termfront
         end
       end
 
-      def route_hit(roster, attacker, msg, clock)
-        target_id = msg[:target].to_i
-        target = roster.find { |player| player[:id] == target_id }
-        return unless target
-        return unless target[:alive] && attacker[:alive]
-        return if target[:team] == attacker[:team]
+      def route_hit(roster, attacker, _msg, clock)
+        return unless attacker[:alive]
 
+        weapon = Weapon::Base.build(attacker[:weapon] || :ar)
+        return if attacker[:last_hit_at] && (clock - attacker[:last_hit_at]) < weapon.cooldown
+
+        target = pvp_target_from_raycast(roster, attacker, weapon)
+        return unless target
+
+        attacker[:last_hit_at] = clock
         apply_damage_to_player(target, Config::PVP_HIT_DMG, clock)
         send_json(target[:socket],
                   { t: "hit", from: attacker[:id], d: Config::PVP_HIT_DMG,
                     s: target[:shield].round(1), h: target[:health].round(1) })
         broadcast(roster, { t: "dead", from: target[:id] }, except: target[:id]) unless target[:alive]
+      end
+
+      def pvp_target_from_raycast(roster, attacker, weapon)
+        dx = Math.cos(attacker[:angle])
+        dy = Math.sin(attacker[:angle])
+        best = nil
+        best_dot = Float::INFINITY
+
+        roster.each do |other|
+          next if other[:id] == attacker[:id]
+          next unless other[:alive]
+          next if other[:team] == attacker[:team]
+
+          ox = other[:x] - attacker[:x]
+          oy = other[:y] - attacker[:y]
+          dot = ox * dx + oy * dy
+          next if dot < 0.1
+
+          perp = (ox * (-dy) + oy * dx).abs
+          next if perp > weapon.hit_width
+          next unless pvp_map.line_of_sight?(attacker[:x], attacker[:y], other[:x], other[:y])
+          next unless dot < best_dot
+
+          best = other
+          best_dot = dot
+        end
+        best
       end
 
       def winning_team(roster)
