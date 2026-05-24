@@ -295,6 +295,32 @@ class TestTermfront < Minitest::Test
                  server.instance_variable_get(:@wavesfight_queues)[key].size
   end
 
+  def test_wavesfight_client_safe_weapon_whitelist
+    client = Termfront::Network::WavesfightClient.allocate
+    assert_equal :ar, client.send(:safe_weapon, "ar")
+    assert_equal :pistol, client.send(:safe_weapon, :pistol)
+    assert_nil client.send(:safe_weapon, "shock_rifle")
+    assert_nil client.send(:safe_weapon, "bogus")
+    assert_nil client.send(:safe_weapon, nil)
+  end
+
+  def test_wavesfight_client_safe_enemy_type_whitelist
+    client = Termfront::Network::WavesfightClient.allocate
+    assert_equal :crawler, client.send(:safe_enemy_type, "crawler")
+    assert_equal :executor, client.send(:safe_enemy_type, "executor")
+    assert_nil client.send(:safe_enemy_type, "boss")
+    assert_nil client.send(:safe_enemy_type, "")
+    assert_nil client.send(:safe_enemy_type, 42)
+  end
+
+  def test_pvp_client_safe_weapon_whitelist
+    client = Termfront::Network::Client.allocate
+    assert_equal :ar, client.send(:safe_weapon, "ar")
+    assert_equal :pistol, client.send(:safe_weapon, :pistol)
+    assert_nil client.send(:safe_weapon, "shock_rifle")
+    assert_nil client.send(:safe_weapon, nil)
+  end
+
   def test_normalize_weapon_accepts_whitelisted_names
     server = Termfront::Network::Server.new
     assert_equal :pistol, server.send(:normalize_weapon, "pistol")

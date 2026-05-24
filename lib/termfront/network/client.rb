@@ -4,6 +4,7 @@ module Termfront
   module Network
     class Client
       TEAM_SIZES = [1, 2, 4].freeze
+      ALLOWED_WEAPONS = %w[pistol ar].freeze
 
       def initialize(stdout)
         @stdout = stdout
@@ -285,7 +286,8 @@ module Termfront
         remote[:current].angle = msg[:a]
         remote[:current].shield = msg[:s]
         remote[:current].health = msg[:h]
-        remote[:current].weapon = msg[:w]&.to_sym
+        weapon = safe_weapon(msg[:w])
+        remote[:current].weapon = weapon if weapon
         remote[:current].ammo = msg[:am]
         spawn_remote_projectile_effect(msg) if (remote[:current].fire_flash || 0) <= 0 && (msg[:ff] || 0) > 0
         remote[:current].fire_flash = msg[:ff] || 0
@@ -895,6 +897,15 @@ module Termfront
         spent = clock - frame_start
         remain = Config::FRAME_DT - spent
         sleep(remain) if remain > 0
+      end
+
+      def safe_weapon(value)
+        return nil unless value.is_a?(String) || value.is_a?(Symbol)
+
+        name = value.to_s
+        return nil unless ALLOWED_WEAPONS.include?(name)
+
+        name.to_sym
       end
     end
   end

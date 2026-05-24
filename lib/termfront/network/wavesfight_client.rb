@@ -3,6 +3,9 @@
 module Termfront
   module Network
     class WavesfightClient
+      ALLOWED_WEAPONS = %w[pistol ar].freeze
+      ALLOWED_ENEMY_TYPES = %w[crawler executor].freeze
+
       def initialize(stdout)
         @stdout = stdout
         @conn = Connection.new
@@ -246,7 +249,8 @@ module Termfront
             remote.angle = entry[:a]
             remote.shield = entry[:s]
             remote.health = entry[:h]
-            remote.weapon = entry[:w]&.to_sym
+            weapon = safe_weapon(entry[:w])
+            remote.weapon = weapon if weapon
             remote.ammo = entry[:am]
             remote.fire_flash = entry[:ff] || 0
           end
@@ -255,20 +259,44 @@ module Termfront
         @enemies = msg[:enemies].filter_map do |enemy|
           next unless enemy[:alive]
 
+          sprite = safe_enemy_type(enemy[:type])
+          next unless sprite
+
           RemoteEnemy.new(
             id: enemy[:id],
             x: enemy[:x],
             y: enemy[:y],
-            sprite_id: enemy[:type].to_sym,
+            sprite_id: sprite,
             hp: enemy[:hp],
             max_hp: enemy[:max_hp],
             alive: true
           )
         end
 
-        @projectiles = msg[:projectiles].map do |projectile|
-          Projectile.new(x: projectile[:x], y: projectile[:y], vx: 0.0, vy: 0.0, type: projectile[:type].to_sym)
+        @projectiles = msg[:projectiles].filter_map do |projectile|
+          type = safe_enemy_type(projectile[:type])
+          next unless type
+
+          Projectile.new(x: projectile[:x], y: projectile[:y], vx: 0.0, vy: 0.0, type: type)
         end
+      end
+
+      def safe_weapon(value)
+        return nil unless value.is_a?(String) || value.is_a?(Symbol)
+
+        name = value.to_s
+        return nil unless ALLOWED_WEAPONS.include?(name)
+
+        name.to_sym
+      end
+
+      def safe_enemy_type(value)
+        return nil unless value.is_a?(String) || value.is_a?(Symbol)
+
+        name = value.to_s
+        return nil unless ALLOWED_ENEMY_TYPES.include?(name)
+
+        name.to_sym
       end
 
       def update_regen_audio(prev_shield)
