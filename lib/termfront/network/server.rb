@@ -8,6 +8,7 @@ module Termfront
   module Network
     class Server
       TEAM_SIZES = [1, 2, 4].freeze
+      MAX_QUEUE_PER_MODE = 64
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -95,15 +96,24 @@ module Termfront
 
       def enqueue_pvp_player(client, team_size)
         match_players = nil
+        rejected = false
         @queue_mutex.synchronize do
-          @queues[team_size] << { socket: client }
-          required = team_size * 2
-          if @queues[team_size].size >= required
-            match_players = @queues[team_size].shift(required)
+          if @queues[team_size].size >= MAX_QUEUE_PER_MODE
+            rejected = true
           else
-            waiting = @queues[team_size].size
-            puts "Queue #{team_size}v#{team_size}: #{waiting}/#{required}"
+            @queues[team_size] << { socket: client }
+            required = team_size * 2
+            if @queues[team_size].size >= required
+              match_players = @queues[team_size].shift(required)
+            else
+              waiting = @queues[team_size].size
+              puts "Queue #{team_size}v#{team_size}: #{waiting}/#{required}"
+            end
           end
+        end
+        if rejected
+          close_socket(client)
+          return
         end
         return unless match_players
 
@@ -116,18 +126,33 @@ module Termfront
         key = [mission_id, difficulty]
 
         match_players = nil
+        rejected = false
         @queue_mutex.synchronize do
-          @wavesfight_queues[key] << { socket: client }
-          if @wavesfight_queues[key].size >= 2
-            match_players = @wavesfight_queues[key].shift(2)
+          if @wavesfight_queues[key].size >= MAX_QUEUE_PER_MODE
+            rejected = true
           else
-            waiting = @wavesfight_queues[key].size
-            puts "Queue wavesfight #{mission_id}: #{waiting}/2"
+            @wavesfight_queues[key] << { socket: client }
+            if @wavesfight_queues[key].size >= 2
+              match_players = @wavesfight_queues[key].shift(2)
+            else
+              waiting = @wavesfight_queues[key].size
+              puts "Queue wavesfight #{mission_id}: #{waiting}/2"
+            end
           end
+        end
+        if rejected
+          close_socket(client)
+          return
         end
         return unless match_players
 
         Thread.new { supervise_match(match_players) { run_wavesfight_match(mission_id, difficulty, match_players) } }
+      end
+
+      def close_socket(client)
+        client.close
+      rescue StandardError
+        nil
       end
 
       def read_queue_request(client)

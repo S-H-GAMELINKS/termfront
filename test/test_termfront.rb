@@ -265,6 +265,36 @@ class TestTermfront < Minitest::Test
     end
   end
 
+  def test_enqueue_pvp_player_rejects_when_queue_full
+    server = Termfront::Network::Server.new
+    full = Array.new(Termfront::Network::Server::MAX_QUEUE_PER_MODE) { { socket: CloseableSocket.new(false) } }
+    server.instance_variable_get(:@queues)[1] = full
+
+    new_socket = CloseableSocket.new(false)
+    server.send(:enqueue_pvp_player, new_socket, 1)
+
+    assert_equal true, new_socket.closed,
+                 "incoming client must be closed when the queue is at MAX_QUEUE_PER_MODE"
+    assert_equal Termfront::Network::Server::MAX_QUEUE_PER_MODE,
+                 server.instance_variable_get(:@queues)[1].size,
+                 "queue must not grow beyond MAX_QUEUE_PER_MODE"
+  end
+
+  def test_enqueue_wavesfight_player_rejects_when_queue_full
+    server = Termfront::Network::Server.new
+    mission_id = Termfront::Mission::Base.wavesfight.first.new.id
+    key = [mission_id, 0]
+    full = Array.new(Termfront::Network::Server::MAX_QUEUE_PER_MODE) { { socket: CloseableSocket.new(false) } }
+    server.instance_variable_get(:@wavesfight_queues)[key] = full
+
+    new_socket = CloseableSocket.new(false)
+    server.send(:enqueue_wavesfight_player, new_socket, { mode: :wavesfight, mission_id: mission_id, difficulty: 0 })
+
+    assert_equal true, new_socket.closed
+    assert_equal Termfront::Network::Server::MAX_QUEUE_PER_MODE,
+                 server.instance_variable_get(:@wavesfight_queues)[key].size
+  end
+
   def test_supervise_match_catches_exception_and_closes_sockets
     server = Termfront::Network::Server.new
     sock = CloseableSocket.new(false)

@@ -16,6 +16,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Restrict audio manifest entries to paths under `data/audio/`
 - Reject Wavesfight co-op queue requests with unknown mission ids
 - Guard match worker threads against uncaught exceptions and ensure player sockets are closed
+- Cap each matchmaking queue at 64 waiting players and reject excess connections
 
 ### Added
 
