@@ -9,6 +9,7 @@ module Termfront
     class Server
       TEAM_SIZES = [1, 2, 4].freeze
       MAX_QUEUE_PER_MODE = 64
+      QUEUE_HANDSHAKE_TIMEOUT = 5
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -62,11 +63,20 @@ module Termfront
           begin
             client = ssl_server.accept
             configure_client(client)
-            enqueue_player(client)
+            Thread.new(client) do |c|
+              enqueue_player(c)
+            rescue StandardError => e
+              puts "Connection handler error: #{e.class}"
+              begin
+                c.close
+              rescue StandardError
+                nil
+              end
+            end
           rescue OpenSSL::SSL::SSLError => e
-            puts "SSL handshake failed: #{e.message}"
+            puts "SSL handshake failed: #{e.class}"
           rescue StandardError => e
-            puts "Accept error: #{e.message}"
+            puts "Accept error: #{e.class}"
           end
         end
       end
@@ -157,7 +167,7 @@ module Termfront
 
       def read_queue_request(client)
         buf = +""
-        deadline = Time.now + 15
+        deadline = Time.now + QUEUE_HANDSHAKE_TIMEOUT
 
         while Time.now < deadline
           readable, = IO.select([client], nil, nil, 0.5)
@@ -194,7 +204,7 @@ module Termfront
           end
         end
 
-        { mode: :pvp, team_size: 1 }
+        nil
       rescue EOFError, Errno::ECONNRESET, Errno::EPIPE, IOError, OpenSSL::SSL::SSLError
         nil
       end

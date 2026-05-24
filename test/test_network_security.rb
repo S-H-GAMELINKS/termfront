@@ -49,6 +49,23 @@ class TestNetworkSecurity < Minitest::Test
     end
   end
 
+  def test_read_queue_request_times_out_on_silent_client
+    server = Termfront::Network::Server.new
+    timeout = Termfront::Network::Server::QUEUE_HANDSHAKE_TIMEOUT
+    assert timeout <= 10, "handshake timeout must stay short to avoid slowloris"
+
+    reader, writer = IO.pipe
+    started = Time.now
+    result = server.send(:read_queue_request, reader)
+    elapsed = Time.now - started
+
+    assert_nil result, "silent client must time out and be dropped, not assumed 1v1"
+    assert elapsed < timeout + 2, "read_queue_request should give up near the configured deadline"
+  ensure
+    reader&.close
+    writer&.close
+  end
+
   def test_read_queue_request_rejects_unknown_mission_id
     server = Termfront::Network::Server.new
     reader, writer = IO.pipe
