@@ -276,7 +276,7 @@ module Termfront
         return unless target[:alive] && attacker[:alive]
         return if target[:team] == attacker[:team]
 
-        send_json(target[:socket], { t: "hit", from: attacker[:id], d: msg[:d] || Config::PVP_HIT_DMG })
+        send_json(target[:socket], { t: "hit", from: attacker[:id], d: Config::PVP_HIT_DMG })
       end
 
       def winning_team(roster)
