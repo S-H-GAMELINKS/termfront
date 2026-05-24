@@ -43,7 +43,7 @@ module Termfront
       end
 
       def run
-        cert, key, chain = load_or_create_cert
+        cert, key, chain = load_cert
 
         ctx = OpenSSL::SSL::SSLContext.new
         ctx.cert = cert
@@ -595,38 +595,24 @@ module Termfront
         spawns
       end
 
-      def generate_self_signed_cert
-        key = OpenSSL::PKey::RSA.new(2048)
-        cert = OpenSSL::X509::Certificate.new
-        cert.version = 2
-        cert.serial = rand(1 << 64)
-        cert.subject = OpenSSL::X509::Name.parse("/CN=termfront-pvp")
-        cert.issuer = cert.subject
-        cert.public_key = key.public_key
-        cert.not_before = Time.now
-        cert.not_after = Time.now + 365 * 24 * 60 * 60
-        cert.sign(key, OpenSSL::Digest.new("SHA256"))
-        [cert, key]
-      end
+      def load_cert
+        cert_file = ENV["TERMFRONT_TLS_CERT_FILE"]
+        key_file  = ENV["TERMFRONT_TLS_KEY_FILE"]
 
-      def load_or_create_cert
-        cert_file = ENV.fetch("TERMFRONT_TLS_CERT_FILE", "termfront_server.crt")
-        key_file  = ENV.fetch("TERMFRONT_TLS_KEY_FILE", "termfront_server.key")
-
-        if File.exist?(cert_file) && File.exist?(key_file)
-          certs = OpenSSL::X509::Certificate.load(File.read(cert_file))
-          certs = [certs] unless certs.is_a?(Array)
-          cert = certs.first
-          chain = certs.drop(1)
-          key  = OpenSSL::PKey::RSA.new(File.read(key_file))
-          puts "Loaded existing certificate."
-        else
-          cert, key = generate_self_signed_cert
-          File.write(cert_file, cert.to_pem)
-          File.write(key_file, key.to_pem)
-          puts "Generated new self-signed certificate."
-          chain = []
+        if cert_file.nil? || cert_file.empty? || key_file.nil? || key_file.empty?
+          raise "TLS not configured: set TERMFRONT_TLS_CERT_FILE and TERMFRONT_TLS_KEY_FILE to PEM paths " \
+                "(use a fullchain certificate, e.g. issued by Let's Encrypt)."
         end
+        unless File.exist?(cert_file) && File.exist?(key_file)
+          raise "TLS cert or key file not found at the configured paths."
+        end
+
+        certs = OpenSSL::X509::Certificate.load(File.read(cert_file))
+        certs = [certs] unless certs.is_a?(Array)
+        cert = certs.first
+        chain = certs.drop(1)
+        key = OpenSSL::PKey::RSA.new(File.read(key_file))
+        puts "Loaded TLS certificate."
         [cert, key, chain]
       end
 
