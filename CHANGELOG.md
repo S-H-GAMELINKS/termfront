@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Require `TERMFRONT_TLS_CERT_FILE` and `TERMFRONT_TLS_KEY_FILE` to be set and point to existing PEM files; removed the self-signed certificate generation fallback
 - Enforce TLS 1.2 as the minimum protocol version on both the multiplayer server and client
 - Stop logging client peer IP addresses on the multiplayer server
+- Connect multiplayer clients to the official server address only; remove the free-form server address input
 
 ### Fixed
 
