@@ -71,12 +71,42 @@ class TestNetworkSecurity < Minitest::Test
       ENV["TERMFRONT_TLS_KEY_FILE"] = key_path
 
       server = Termfront::Network::Server.new
-      loaded_cert, loaded_key, chain = server.send(:load_or_create_cert)
+      loaded_cert, loaded_key, chain = server.send(:load_cert)
 
       assert_equal cert.to_der, loaded_cert.to_der
       assert_equal key.to_der, loaded_key.to_der
       assert_equal 1, chain.size
       assert_equal ca_cert.to_der, chain.first.to_der
+    ensure
+      ENV["TERMFRONT_TLS_CERT_FILE"] = old_cert
+      ENV["TERMFRONT_TLS_KEY_FILE"] = old_key
+    end
+  end
+
+  def test_load_cert_raises_when_env_vars_missing
+    old_cert = ENV["TERMFRONT_TLS_CERT_FILE"]
+    old_key = ENV["TERMFRONT_TLS_KEY_FILE"]
+    ENV.delete("TERMFRONT_TLS_CERT_FILE")
+    ENV.delete("TERMFRONT_TLS_KEY_FILE")
+
+    server = Termfront::Network::Server.new
+    error = assert_raises(RuntimeError) { server.send(:load_cert) }
+    assert_match(/TERMFRONT_TLS_CERT_FILE/, error.message)
+  ensure
+    ENV["TERMFRONT_TLS_CERT_FILE"] = old_cert
+    ENV["TERMFRONT_TLS_KEY_FILE"] = old_key
+  end
+
+  def test_load_cert_raises_when_files_missing
+    Dir.mktmpdir do |dir|
+      old_cert = ENV["TERMFRONT_TLS_CERT_FILE"]
+      old_key = ENV["TERMFRONT_TLS_KEY_FILE"]
+      ENV["TERMFRONT_TLS_CERT_FILE"] = File.join(dir, "missing.pem")
+      ENV["TERMFRONT_TLS_KEY_FILE"] = File.join(dir, "missing.key")
+
+      server = Termfront::Network::Server.new
+      error = assert_raises(RuntimeError) { server.send(:load_cert) }
+      assert_match(/not found/, error.message)
     ensure
       ENV["TERMFRONT_TLS_CERT_FILE"] = old_cert
       ENV["TERMFRONT_TLS_KEY_FILE"] = old_key

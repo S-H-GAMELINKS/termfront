@@ -54,7 +54,7 @@ Start a PvP server:
 termfront-server
 ```
 
-Use custom TLS certificate paths:
+TLS certificate / key paths are **required** for the server to start. Use a fullchain certificate (e.g. issued by Let's Encrypt):
 
 ```bash
 TERMFRONT_TLS_CERT_FILE=/path/to/fullchain.pem \
