@@ -18,6 +18,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Guard match worker threads against uncaught exceptions and ensure player sockets are closed
 - Cap each matchmaking queue at 64 waiting players and reject excess connections
 - Move per-connection handshake off the accept loop and drop silent clients after a short timeout
+- Cap server and client receive buffers and disconnect peers that flood bytes without a newline
 
 ### Added
 

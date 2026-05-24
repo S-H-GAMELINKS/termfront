@@ -10,6 +10,7 @@ module Termfront
       TEAM_SIZES = [1, 2, 4].freeze
       MAX_QUEUE_PER_MODE = 64
       QUEUE_HANDSHAKE_TIMEOUT = 5
+      MAX_MSG_BYTES = 16 * 1024
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -179,6 +180,8 @@ module Termfront
             next
           end
 
+          return nil if buf.bytesize > MAX_MSG_BYTES
+
           while (nl = buf.index("\n"))
             line = buf.slice!(0, nl + 1)
             begin
@@ -254,6 +257,12 @@ module Termfront
 
             begin
               player[:buf] << sock.read_nonblock(4096)
+              if player[:buf].bytesize > MAX_MSG_BYTES
+                broadcast(roster, { t: "match_end", reason: "disconnect", player_id: player[:id] }, except: player[:id])
+                close_players(roster)
+                puts "Match aborted."
+                return
+              end
               consume_messages(roster, player)
             rescue IO::WaitReadable
               next
@@ -421,6 +430,11 @@ module Termfront
 
               begin
                 player[:buf] << sock.read_nonblock(4096)
+                if player[:buf].bytesize > MAX_MSG_BYTES
+                  broadcast(roster, { t: "match_end", reason: "disconnect", player_id: player[:id] }, except: player[:id])
+                  close_players(roster)
+                  return
+                end
                 consume_wavesfight_messages(roster, session, player)
               rescue IO::WaitReadable
                 next

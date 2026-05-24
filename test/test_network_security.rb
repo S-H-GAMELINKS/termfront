@@ -49,6 +49,19 @@ class TestNetworkSecurity < Minitest::Test
     end
   end
 
+  def test_read_queue_request_rejects_oversize_payload_without_newline
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write("a" * (Termfront::Network::Server::MAX_MSG_BYTES + 1))
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_nil result, "client that floods bytes without a newline must be dropped"
+  ensure
+    reader&.close
+    writer&.close
+  end
+
   def test_read_queue_request_times_out_on_silent_client
     server = Termfront::Network::Server.new
     timeout = Termfront::Network::Server::QUEUE_HANDSHAKE_TIMEOUT
