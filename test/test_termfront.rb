@@ -153,6 +153,74 @@ class TestTermfront < Minitest::Test
     assert_equal 25, payload[:d]
   end
 
+  FakeEnemy = Struct.new(:alive, :x, :y) do
+    def update(*); end
+  end
+
+  def wavesfight_test_session(clock)
+    {
+      clock: clock,
+      enemies: [FakeEnemy.new(true, 0.0, 0.0)],
+      projectiles: [],
+      map: nil,
+      mission: nil,
+      difficulty: 0,
+      wave: 1
+    }
+  end
+
+  def wavesfight_test_player(shield:, last_damage:)
+    {
+      id: 0, alive: true, fire_flash: 0,
+      x: 5.0, y: 5.0,
+      shield: shield,
+      health: Termfront::Config::HEALTH_MAX.to_f,
+      last_damage: last_damage
+    }
+  end
+
+  def test_wavesfight_server_regenerates_player_shield_after_delay
+    server = Termfront::Network::Server.new
+    clock = 100.0
+    roster = [wavesfight_test_player(shield: 50.0,
+                                     last_damage: clock - Termfront::Config::SHIELD_DELAY - 1.0)]
+    session = wavesfight_test_session(clock)
+
+    dt = 0.1
+    server.send(:update_wavesfight_session, roster, session, dt)
+
+    expected = 50.0 + Termfront::Config::SHIELD_REGEN * dt
+    assert_in_delta expected, roster[0][:shield], 0.0001,
+                    "shield must regenerate when SHIELD_DELAY has elapsed"
+  end
+
+  def test_wavesfight_server_does_not_regenerate_within_shield_delay
+    server = Termfront::Network::Server.new
+    clock = 100.0
+    roster = [wavesfight_test_player(shield: 50.0, last_damage: clock - 0.1)]
+    session = wavesfight_test_session(clock)
+
+    server.send(:update_wavesfight_session, roster, session, 0.1)
+
+    assert_equal 50.0, roster[0][:shield],
+                 "shield must stay flat while still within SHIELD_DELAY of last damage"
+  end
+
+  def test_wavesfight_server_apply_damage_resets_last_damage
+    server = Termfront::Network::Server.new
+    player = {
+      shield: Termfront::Config::SHIELD_MAX.to_f,
+      health: Termfront::Config::HEALTH_MAX.to_f,
+      last_damage: -Termfront::Config::SHIELD_DELAY,
+      alive: true
+    }
+
+    server.send(:apply_wavesfight_damage, player, 10, 42.0)
+
+    assert_equal 42.0, player[:last_damage]
+    assert_equal Termfront::Config::SHIELD_MAX - 10, player[:shield]
+  end
+
   def test_pvp_server_spawns_are_walkable
     server = Termfront::Network::Server.new
     map = Termfront::Map.new(Termfront::Network::Server::PVP_MAP)
