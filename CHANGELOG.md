@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Validate PvP state fields (position, shield, health, ammo, fire-flash) before relaying to opponents; drop the relay when position is non-finite or outside the map
 - Reject multiplayer state messages whose position delta exceeds the maximum physical step from the previous server-known position
 - Rate-limit incoming multiplayer messages per type per player; sustained overflow ends the match for the offending client
+- Track PvP shield and health on the server; the server applies hit damage, regenerates shields between hits, and uses authoritative values when relaying state to opponents
 
 ### Added
 

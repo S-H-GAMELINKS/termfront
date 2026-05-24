@@ -242,6 +242,9 @@ module Termfront
             y: spawn[1],
             angle: spawn[2],
             last_state_at: nil,
+            shield: Config::SHIELD_MAX.to_f,
+            health: Config::HEALTH_MAX.to_f,
+            last_damage: -Config::SHIELD_DELAY,
             buf: +"",
             alive: true
           }
@@ -260,6 +263,7 @@ module Termfront
 
         match_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         last_activity = match_start
+        last_tick_at = match_start
 
         loop do
           sockets = roster.filter_map do |player|
@@ -279,6 +283,10 @@ module Termfront
             puts "Match ended (#{reason})."
             return
           end
+
+          dt = now - last_tick_at
+          roster.each { |player| regen_player(player, dt, now) }
+          last_tick_at = now
 
           next unless readable
 
@@ -367,17 +375,10 @@ module Termfront
               ff = validate_int(msg[:ff], min: 0, max: 10)
               msg = msg.merge(ff: ff || 0)
             end
-            if msg.key?(:s)
-              shield = validate_float(msg[:s], min: 0, max: Config::SHIELD_MAX)
-              msg = shield ? msg.merge(s: shield) : msg.except(:s)
-            end
-            if msg.key?(:h)
-              health = validate_float(msg[:h], min: 0, max: Config::HEALTH_MAX)
-              msg = health ? msg.merge(h: health) : msg.except(:h)
-            end
+            msg = msg.merge(s: player[:shield].round(1), h: player[:health].round(1))
             broadcast(roster, msg.merge(from: player[:id]), except: player[:id])
           when "hit"
-            route_hit(roster, player, msg)
+            route_hit(roster, player, msg, Process.clock_gettime(Process::CLOCK_MONOTONIC))
           when "dead"
             player[:alive] = false
             broadcast(roster, { t: "dead", from: player[:id] }, except: player[:id])
@@ -385,14 +386,18 @@ module Termfront
         end
       end
 
-      def route_hit(roster, attacker, msg)
+      def route_hit(roster, attacker, msg, clock)
         target_id = msg[:target].to_i
         target = roster.find { |player| player[:id] == target_id }
         return unless target
         return unless target[:alive] && attacker[:alive]
         return if target[:team] == attacker[:team]
 
-        send_json(target[:socket], { t: "hit", from: attacker[:id], d: Config::PVP_HIT_DMG })
+        apply_damage_to_player(target, Config::PVP_HIT_DMG, clock)
+        send_json(target[:socket],
+                  { t: "hit", from: attacker[:id], d: Config::PVP_HIT_DMG,
+                    s: target[:shield].round(1), h: target[:health].round(1) })
+        broadcast(roster, { t: "dead", from: target[:id] }, except: target[:id]) unless target[:alive]
       end
 
       def winning_team(roster)
@@ -679,14 +684,7 @@ module Termfront
       def update_wavesfight_session(roster, session, dt)
         roster.each do |player|
           player[:fire_flash] -= 1 if player[:fire_flash].to_i > 0
-          next unless player[:alive]
-
-          if player[:shield] < Config::SHIELD_MAX && (session[:clock] - player[:last_damage]) >= Config::SHIELD_DELAY
-            player[:shield] = [player[:shield] + Config::SHIELD_REGEN * dt, Config::SHIELD_MAX].min
-          end
-          if player[:shield] >= Config::SHIELD_MAX && player[:health] < Config::HEALTH_MAX
-            player[:health] = [player[:health] + Config::SHIELD_REGEN * dt, Config::HEALTH_MAX].min
-          end
+          regen_player(player, dt, session[:clock])
         end
 
         session[:enemies].each do |enemy|
@@ -708,8 +706,8 @@ module Termfront
             target = roster.find { |player| player[:alive] && projectile.hit_player?(player[:x], player[:y]) }
             if target
               dmg = enemy_damage(projectile.type)
-              apply_wavesfight_damage(target, dmg, session[:clock])
-              send_json(target[:socket], { t: "hit", d: dmg })
+              apply_damage_to_player(target, dmg, session[:clock])
+              send_json(target[:socket], { t: "hit", d: dmg, s: target[:shield], h: target[:health] })
               true
             else
               false
@@ -756,7 +754,7 @@ module Termfront
         enemy_klass ? enemy_klass.allocate.send(:damage) : 10
       end
 
-      def apply_wavesfight_damage(player, amount, clock)
+      def apply_damage_to_player(player, amount, clock)
         if player[:shield] > 0
           overflow = amount - player[:shield]
           player[:shield] = [player[:shield] - amount, 0].max
@@ -767,6 +765,17 @@ module Termfront
 
         player[:last_damage] = clock
         player[:alive] = false if player[:health] <= 0
+      end
+
+      def regen_player(player, dt, now)
+        return unless player[:alive]
+
+        if player[:shield] < Config::SHIELD_MAX && (now - player[:last_damage]) >= Config::SHIELD_DELAY
+          player[:shield] = [player[:shield] + Config::SHIELD_REGEN * dt, Config::SHIELD_MAX].min
+        end
+        return unless player[:shield] >= Config::SHIELD_MAX && player[:health] < Config::HEALTH_MAX
+
+        player[:health] = [player[:health] + Config::SHIELD_REGEN * dt, Config::HEALTH_MAX].min
       end
 
       def all_wavesfight_players_dead?(roster)

@@ -262,7 +262,15 @@ module Termfront
           when "state"
             update_remote_state(msg)
           when "hit"
-            @player.apply_damage(msg[:d] || Config::PVP_HIT_DMG)
+            if msg.key?(:s) && msg.key?(:h)
+              @player.shield = msg[:s]
+              @player.health = msg[:h]
+              @player.last_damage = @player.game_time
+              @player.damage_flash = 3
+              @player.dead = msg[:h] <= 0
+            else
+              @player.apply_damage(msg[:d] || Config::PVP_HIT_DMG)
+            end
             @audio.play_se(:damage)
             notify_death_if_needed
           when "dead"

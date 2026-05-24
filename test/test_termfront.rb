@@ -131,21 +131,30 @@ class TestTermfront < Minitest::Test
     assert_nil server.send(:winning_team, roster)
   end
 
+  def pvp_test_player(id:, team:, socket:)
+    {
+      id: id, team: team, socket: socket, alive: true,
+      shield: Termfront::Config::SHIELD_MAX.to_f,
+      health: Termfront::Config::HEALTH_MAX.to_f,
+      last_damage: -Termfront::Config::SHIELD_DELAY
+    }
+  end
+
   def test_pvp_server_routes_hits_only_to_enemy_targets
     server = Termfront::Network::Server.new
     ally_socket = FakeSocket.new([])
     enemy_socket = FakeSocket.new([])
 
     roster = [
-      { id: 0, team: 0, alive: true, socket: FakeSocket.new([]) },
-      { id: 1, team: 0, alive: true, socket: ally_socket },
-      { id: 2, team: 1, alive: true, socket: enemy_socket }
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 0, socket: ally_socket),
+      pvp_test_player(id: 2, team: 1, socket: enemy_socket)
     ]
 
-    server.send(:route_hit, roster, roster[0], { target: 1, d: 25 })
+    server.send(:route_hit, roster, roster[0], { target: 1, d: 25 }, 0.0)
     assert_empty ally_socket.writes
 
-    server.send(:route_hit, roster, roster[0], { target: 2, d: 25 })
+    server.send(:route_hit, roster, roster[0], { target: 2, d: 25 }, 0.0)
     refute_empty enemy_socket.writes
     payload = JSON.parse(enemy_socket.writes.first, symbolize_names: true)
     assert_equal :hit, payload[:t].to_sym
@@ -158,14 +167,53 @@ class TestTermfront < Minitest::Test
     enemy_socket = FakeSocket.new([])
 
     roster = [
-      { id: 0, team: 0, alive: true, socket: FakeSocket.new([]) },
-      { id: 1, team: 1, alive: true, socket: enemy_socket }
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 1, socket: enemy_socket)
     ]
 
-    server.send(:route_hit, roster, roster[0], { target: 1, d: 999_999 })
+    server.send(:route_hit, roster, roster[0], { target: 1, d: 999_999 }, 0.0)
     payload = JSON.parse(enemy_socket.writes.first, symbolize_names: true)
     assert_equal Termfront::Config::PVP_HIT_DMG, payload[:d],
                  "server must not relay attacker-controlled damage values"
+  end
+
+  def test_pvp_server_decrements_server_side_hp_on_hit
+    server = Termfront::Network::Server.new
+    target_socket = FakeSocket.new([])
+    roster = [
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 1, socket: target_socket)
+    ]
+
+    initial_shield = roster[1][:shield]
+    server.send(:route_hit, roster, roster[0], { target: 1 }, 10.0)
+
+    assert_equal initial_shield - Termfront::Config::PVP_HIT_DMG, roster[1][:shield]
+    payload = JSON.parse(target_socket.writes.first, symbolize_names: true)
+    assert_equal roster[1][:shield].round(1), payload[:s]
+    assert_equal roster[1][:health].round(1), payload[:h]
+  end
+
+  def test_pvp_server_marks_target_dead_after_enough_hits
+    server = Termfront::Network::Server.new
+    attacker_socket = FakeSocket.new([])
+    target_socket = FakeSocket.new([])
+    roster = [
+      pvp_test_player(id: 0, team: 0, socket: attacker_socket),
+      pvp_test_player(id: 1, team: 1, socket: target_socket)
+    ]
+
+    total_hp = Termfront::Config::SHIELD_MAX + Termfront::Config::HEALTH_MAX
+    hits_needed = (total_hp.to_f / Termfront::Config::PVP_HIT_DMG).ceil
+    hits_needed.times do |i|
+      server.send(:route_hit, roster, roster[0], { target: 1 }, i.to_f)
+    end
+
+    assert_equal false, roster[1][:alive]
+    assert_equal 0, server.send(:winning_team, roster)
+    death_msg = attacker_socket.writes.map { |w| JSON.parse(w, symbolize_names: true) }.find { |m| m[:t] == "dead" }
+    refute_nil death_msg, "attacker must be notified via dead broadcast when target dies"
+    assert_equal 1, death_msg[:from]
   end
 
   FakeEnemy = Struct.new(:alive, :x, :y) do
@@ -230,7 +278,7 @@ class TestTermfront < Minitest::Test
       alive: true
     }
 
-    server.send(:apply_wavesfight_damage, player, 10, 42.0)
+    server.send(:apply_damage_to_player, player, 10, 42.0)
 
     assert_equal 42.0, player[:last_damage]
     assert_equal Termfront::Config::SHIELD_MAX - 10, player[:shield]
