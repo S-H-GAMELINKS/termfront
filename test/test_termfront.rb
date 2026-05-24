@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "stringio"
+require "set"
 
 class TestTermfront < Minitest::Test
   FakeSocket = Struct.new(:writes) do
@@ -59,6 +60,18 @@ class TestTermfront < Minitest::Test
 
     refute_empty terminals
     assert_equal :service_hub, terminals.first[:id]
+  end
+
+  def test_mission_enemy_waypoints_are_walkable
+    (Termfront::Mission::Base.campaign + Termfront::Mission::Base.wavesfight).uniq.each do |mission_klass|
+      mission = mission_klass.new
+      map = mission.build_map
+      mission.enemy_defs.each_with_index do |enemy_def, idx|
+        sx, sy, ax, ay, _type = enemy_def
+        refute map.blocked?(sx, sy), "#{mission.id} enemy #{idx} spawn (#{sx}, #{sy}) is blocked"
+        refute map.blocked?(ax, ay), "#{mission.id} enemy #{idx} patrol target (#{ax}, #{ay}) is blocked"
+      end
+    end
   end
 
   def test_wavesfight_missions_are_registered
@@ -131,21 +144,36 @@ class TestTermfront < Minitest::Test
     assert_nil server.send(:winning_team, roster)
   end
 
+  def pvp_test_player(id:, team:, socket:, x: nil, y: nil, angle: nil)
+    defaults_x, defaults_y, defaults_a = id.zero? ? [3.0, 6.5, 0.0] : [16.0, 6.5, Math::PI]
+    {
+      id: id, team: team, socket: socket, alive: true,
+      shield: Termfront::Config::SHIELD_MAX.to_f,
+      health: Termfront::Config::HEALTH_MAX.to_f,
+      last_damage: -Termfront::Config::SHIELD_DELAY,
+      x: x || defaults_x,
+      y: y || defaults_y,
+      angle: angle || defaults_a,
+      weapon: :ar,
+      last_hit_at: nil
+    }
+  end
+
   def test_pvp_server_routes_hits_only_to_enemy_targets
     server = Termfront::Network::Server.new
     ally_socket = FakeSocket.new([])
     enemy_socket = FakeSocket.new([])
 
     roster = [
-      { id: 0, team: 0, alive: true, socket: FakeSocket.new([]) },
-      { id: 1, team: 0, alive: true, socket: ally_socket },
-      { id: 2, team: 1, alive: true, socket: enemy_socket }
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 0, socket: ally_socket),
+      pvp_test_player(id: 2, team: 1, socket: enemy_socket)
     ]
 
-    server.send(:route_hit, roster, roster[0], { target: 1, d: 25 })
+    server.send(:route_hit, roster, roster[0], { target: 1, d: 25 }, 0.0)
     assert_empty ally_socket.writes
 
-    server.send(:route_hit, roster, roster[0], { target: 2, d: 25 })
+    server.send(:route_hit, roster, roster[0], { target: 2, d: 25 }, 0.0)
     refute_empty enemy_socket.writes
     payload = JSON.parse(enemy_socket.writes.first, symbolize_names: true)
     assert_equal :hit, payload[:t].to_sym
@@ -158,14 +186,114 @@ class TestTermfront < Minitest::Test
     enemy_socket = FakeSocket.new([])
 
     roster = [
-      { id: 0, team: 0, alive: true, socket: FakeSocket.new([]) },
-      { id: 1, team: 1, alive: true, socket: enemy_socket }
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 1, socket: enemy_socket)
     ]
 
-    server.send(:route_hit, roster, roster[0], { target: 1, d: 999_999 })
+    server.send(:route_hit, roster, roster[0], { target: 1, d: 999_999 }, 0.0)
     payload = JSON.parse(enemy_socket.writes.first, symbolize_names: true)
     assert_equal Termfront::Config::PVP_HIT_DMG, payload[:d],
                  "server must not relay attacker-controlled damage values"
+  end
+
+  def test_pvp_server_decrements_server_side_hp_on_hit
+    server = Termfront::Network::Server.new
+    target_socket = FakeSocket.new([])
+    roster = [
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 1, socket: target_socket)
+    ]
+
+    initial_shield = roster[1][:shield]
+    server.send(:route_hit, roster, roster[0], { target: 1 }, 10.0)
+
+    assert_equal initial_shield - Termfront::Config::PVP_HIT_DMG, roster[1][:shield]
+    payload = JSON.parse(target_socket.writes.first, symbolize_names: true)
+    assert_equal roster[1][:shield].round(1), payload[:s]
+    assert_equal roster[1][:health].round(1), payload[:h]
+  end
+
+  def test_pvp_server_marks_target_dead_after_enough_hits
+    server = Termfront::Network::Server.new
+    attacker_socket = FakeSocket.new([])
+    target_socket = FakeSocket.new([])
+    roster = [
+      pvp_test_player(id: 0, team: 0, socket: attacker_socket),
+      pvp_test_player(id: 1, team: 1, socket: target_socket)
+    ]
+
+    total_hp = Termfront::Config::SHIELD_MAX + Termfront::Config::HEALTH_MAX
+    hits_needed = (total_hp.to_f / Termfront::Config::PVP_HIT_DMG).ceil
+    hits_needed.times do |i|
+      server.send(:route_hit, roster, roster[0], { target: 1 }, i.to_f)
+    end
+
+    assert_equal false, roster[1][:alive]
+    assert_equal 0, server.send(:winning_team, roster)
+    death_msg = attacker_socket.writes.map { |w| JSON.parse(w, symbolize_names: true) }.find { |m| m[:t] == "dead" }
+    refute_nil death_msg, "attacker must be notified via dead broadcast when target dies"
+    assert_equal 1, death_msg[:from]
+  end
+
+  def test_pvp_server_picks_target_via_raycast_ignoring_msg_target
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+    roster = [
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 1, socket: enemy_socket)
+    ]
+
+    server.send(:route_hit, roster, roster[0], { target: 999 }, 0.0)
+    refute_empty enemy_socket.writes,
+                 "raycast must find target based on attacker facing, not on msg[:target]"
+  end
+
+  def test_pvp_server_rejects_hits_outside_attacker_cone
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+    attacker = pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([]),
+                               angle: -Math::PI / 2) # facing up, not toward enemy
+    target = pvp_test_player(id: 1, team: 1, socket: enemy_socket)
+
+    server.send(:route_hit, [attacker, target], attacker, {}, 0.0)
+    assert_empty enemy_socket.writes,
+                 "target outside attacker firing cone must not be hit"
+  end
+
+  def test_pvp_server_blocks_hits_behind_walls
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+    # PVP_MAP row 4: "#..##........##....#" — walls between attacker and target
+    attacker = pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([]),
+                               x: 5.5, y: 4.5, angle: 0.0)
+    target = pvp_test_player(id: 1, team: 1, socket: enemy_socket,
+                             x: 16.5, y: 4.5)
+
+    server.send(:route_hit, [attacker, target], attacker, {}, 0.0)
+    assert_empty enemy_socket.writes,
+                 "target behind a wall must not be hit"
+  end
+
+  def test_pvp_server_enforces_weapon_cooldown_on_hits
+    server = Termfront::Network::Server.new
+    enemy_socket = FakeSocket.new([])
+    roster = [
+      pvp_test_player(id: 0, team: 0, socket: FakeSocket.new([])),
+      pvp_test_player(id: 1, team: 1, socket: enemy_socket)
+    ]
+    cooldown = Termfront::Weapon::Base.build(:ar).cooldown
+
+    server.send(:route_hit, roster, roster[0], {}, 100.0)
+    refute_empty enemy_socket.writes
+    after_first = enemy_socket.writes.size
+
+    server.send(:route_hit, roster, roster[0], {}, 100.0 + cooldown * 0.5)
+    assert_equal after_first, enemy_socket.writes.size,
+                 "second hit within weapon cooldown must be dropped"
+
+    server.send(:route_hit, roster, roster[0], {}, 100.0 + cooldown + 0.01)
+    assert_equal after_first + 1, enemy_socket.writes.size,
+                 "hit after cooldown must be applied"
   end
 
   FakeEnemy = Struct.new(:alive, :x, :y) do
@@ -221,6 +349,77 @@ class TestTermfront < Minitest::Test
                  "shield must stay flat while still within SHIELD_DELAY of last damage"
   end
 
+  def wavesfight_test_player_with_obtained(shield:, last_damage:)
+    base = wavesfight_test_player(shield: shield, last_damage: last_damage)
+    base[:weapon] = :ar
+    base[:ammo] = 60
+    base[:obtained_weapons] = Set.new(%i[pistol ar])
+    base
+  end
+
+  def test_wavesfight_server_spawn_drop_appends_to_session
+    server = Termfront::Network::Server.new
+    session = wavesfight_test_session(100.0)
+    session[:next_drop_id] = 0
+    session[:drops] = []
+
+    server.send(:spawn_drop, session, 5.0, 5.0, :shock_pistol, 60)
+    assert_equal 1, session[:drops].size
+    drop = session[:drops].first
+    assert_equal 0, drop[:id]
+    assert_equal :shock_pistol, drop[:type]
+    assert_equal 60, drop[:ammo]
+  end
+
+  def test_wavesfight_server_process_pickup_requires_proximity
+    server = Termfront::Network::Server.new
+    session = wavesfight_test_session(100.0)
+    session[:next_drop_id] = 1
+    session[:drops] = [{ id: 0, x: 10.0, y: 10.0, type: :shock_pistol, ammo: 60 }]
+
+    player = wavesfight_test_player_with_obtained(shield: 100.0, last_damage: -3.0)
+    player[:x] = 5.0
+    player[:y] = 5.0
+
+    server.send(:process_pickup, session, player, { id: 0 })
+    assert_equal 1, session[:drops].size, "drop must remain when player is too far"
+    assert_equal :ar, player[:weapon]
+  end
+
+  def test_wavesfight_server_process_pickup_swaps_weapon_and_drops_current
+    server = Termfront::Network::Server.new
+    session = wavesfight_test_session(100.0)
+    session[:next_drop_id] = 1
+    session[:drops] = [{ id: 0, x: 5.1, y: 5.1, type: :shock_pistol, ammo: 60 }]
+
+    player = wavesfight_test_player_with_obtained(shield: 100.0, last_damage: -3.0)
+    player[:x] = 5.0
+    player[:y] = 5.0
+
+    server.send(:process_pickup, session, player, { id: 0 })
+
+    assert_equal :shock_pistol, player[:weapon]
+    assert_equal 60, player[:ammo]
+    assert player[:obtained_weapons].include?(:shock_pistol)
+    refute session[:drops].any? { |d| d[:id] == 0 }, "picked-up drop must be removed"
+    refute_empty session[:drops], "previous weapon must be re-dropped at player position"
+    new_drop = session[:drops].last
+    assert_equal :ar, new_drop[:type]
+    assert_equal 60, new_drop[:ammo]
+  end
+
+  def test_normalize_weapon_respects_player_obtained_set
+    server = Termfront::Network::Server.new
+    player = { obtained_weapons: Set.new(%i[pistol ar]) }
+
+    assert_equal :ar, server.send(:normalize_weapon, "ar", player)
+    assert_nil server.send(:normalize_weapon, "shock_rifle", player),
+               "weapons outside the player's obtained set must be rejected"
+
+    player[:obtained_weapons] << :shock_rifle
+    assert_equal :shock_rifle, server.send(:normalize_weapon, "shock_rifle", player)
+  end
+
   def test_wavesfight_server_apply_damage_resets_last_damage
     server = Termfront::Network::Server.new
     player = {
@@ -230,10 +429,273 @@ class TestTermfront < Minitest::Test
       alive: true
     }
 
-    server.send(:apply_wavesfight_damage, player, 10, 42.0)
+    server.send(:apply_damage_to_player, player, 10, 42.0)
 
     assert_equal 42.0, player[:last_damage]
     assert_equal Termfront::Config::SHIELD_MAX - 10, player[:shield]
+  end
+
+  def test_audio_manager_rejects_paths_outside_data_audio
+    manager = Termfront::AudioManager.new
+    manager.instance_variable_set(:@manifest, {
+                                    "bgm" => { "evil" => "../../../etc/passwd" },
+                                    "se" => { "absolute" => "/etc/passwd" }
+                                  })
+
+    assert_nil manager.send(:asset_path, :bgm, :evil),
+               "manifest must not resolve relative paths that escape the audio directory"
+    assert_nil manager.send(:asset_path, :se, :absolute),
+               "manifest must not resolve absolute paths outside data/audio"
+  end
+
+  def test_audio_manager_accepts_valid_data_audio_path
+    manager = Termfront::AudioManager.new
+    manager.instance_variable_set(:@manifest, {
+                                    "bgm" => { "title" => "data/audio/title.mp3" }
+                                  })
+    path = manager.send(:asset_path, :bgm, :title)
+    refute_nil path
+    assert path.end_with?("data/audio/title.mp3")
+  end
+
+  CloseableSocket = Struct.new(:closed) do
+    def close
+      self.closed = true
+    end
+  end
+
+  def test_enqueue_pvp_player_rejects_when_queue_full
+    server = Termfront::Network::Server.new
+    full = Array.new(Termfront::Network::Server::MAX_QUEUE_PER_MODE) { { socket: CloseableSocket.new(false) } }
+    server.instance_variable_get(:@queues)[1] = full
+
+    new_socket = CloseableSocket.new(false)
+    server.send(:enqueue_pvp_player, new_socket, 1)
+
+    assert_equal true, new_socket.closed,
+                 "incoming client must be closed when the queue is at MAX_QUEUE_PER_MODE"
+    assert_equal Termfront::Network::Server::MAX_QUEUE_PER_MODE,
+                 server.instance_variable_get(:@queues)[1].size,
+                 "queue must not grow beyond MAX_QUEUE_PER_MODE"
+  end
+
+  def test_enqueue_wavesfight_player_rejects_when_queue_full
+    server = Termfront::Network::Server.new
+    mission_id = Termfront::Mission::Base.wavesfight.first.new.id
+    key = [mission_id, 0]
+    full = Array.new(Termfront::Network::Server::MAX_QUEUE_PER_MODE) { { socket: CloseableSocket.new(false) } }
+    server.instance_variable_get(:@wavesfight_queues)[key] = full
+
+    new_socket = CloseableSocket.new(false)
+    server.send(:enqueue_wavesfight_player, new_socket, { mode: :wavesfight, mission_id: mission_id, difficulty: 0 })
+
+    assert_equal true, new_socket.closed
+    assert_equal Termfront::Network::Server::MAX_QUEUE_PER_MODE,
+                 server.instance_variable_get(:@wavesfight_queues)[key].size
+  end
+
+  def test_wavesfight_client_safe_weapon_whitelist
+    client = Termfront::Network::WavesfightClient.allocate
+    assert_equal :ar, client.send(:safe_weapon, "ar")
+    assert_equal :pistol, client.send(:safe_weapon, :pistol)
+    assert_equal :shock_rifle, client.send(:safe_weapon, "shock_rifle")
+    assert_equal :shock_pistol, client.send(:safe_weapon, :shock_pistol)
+    assert_nil client.send(:safe_weapon, "bogus")
+    assert_nil client.send(:safe_weapon, nil)
+  end
+
+  def test_wavesfight_client_safe_enemy_type_whitelist
+    client = Termfront::Network::WavesfightClient.allocate
+    assert_equal :crawler, client.send(:safe_enemy_type, "crawler")
+    assert_equal :executor, client.send(:safe_enemy_type, "executor")
+    assert_nil client.send(:safe_enemy_type, "boss")
+    assert_nil client.send(:safe_enemy_type, "")
+    assert_nil client.send(:safe_enemy_type, 42)
+  end
+
+  def test_pvp_client_safe_weapon_whitelist
+    client = Termfront::Network::Client.allocate
+    assert_equal :ar, client.send(:safe_weapon, "ar")
+    assert_equal :pistol, client.send(:safe_weapon, :pistol)
+    assert_nil client.send(:safe_weapon, "shock_rifle")
+    assert_nil client.send(:safe_weapon, nil)
+  end
+
+  def test_valid_position_accepts_finite_in_bounds
+    server = Termfront::Network::Server.new
+    map = Termfront::Map.new(["####", "#..#", "####"])
+
+    assert server.send(:valid_position?, { x: 1.5, y: 1.5, a: 0.0 }, map)
+    assert server.send(:valid_position?, { x: 1, y: 1, a: 0 }, map)
+  end
+
+  def test_valid_position_rejects_non_finite_and_out_of_bounds
+    server = Termfront::Network::Server.new
+    map = Termfront::Map.new(["####", "#..#", "####"])
+
+    refute server.send(:valid_position?, { x: Float::NAN, y: 1.5, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: 1.5, y: Float::INFINITY, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: -1.0, y: 1.5, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: 100.0, y: 1.5, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: "1.5", y: 1.5, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: nil, y: 1.5, a: 0.0 }, map)
+  end
+
+  def test_allow_message_within_limit
+    server = Termfront::Network::Server.new
+    player = {}
+    now = 100.0
+    limit = Termfront::Network::Server::RATE_LIMITS["hit"]
+
+    limit.times do
+      assert server.send(:allow_message, player, "hit", now)
+    end
+  end
+
+  def test_allow_message_drops_excess
+    server = Termfront::Network::Server.new
+    player = {}
+    now = 100.0
+    limit = Termfront::Network::Server::RATE_LIMITS["hit"]
+
+    limit.times { server.send(:allow_message, player, "hit", now) }
+    refute server.send(:allow_message, player, "hit", now),
+           "messages beyond the per-second limit must be rejected"
+  end
+
+  def test_allow_message_refills_after_a_second
+    server = Termfront::Network::Server.new
+    player = {}
+    limit = Termfront::Network::Server::RATE_LIMITS["hit"]
+
+    limit.times { server.send(:allow_message, player, "hit", 100.0) }
+    refute server.send(:allow_message, player, "hit", 100.0)
+    assert server.send(:allow_message, player, "hit", 101.0),
+           "tokens should refill over time"
+  end
+
+  def test_allow_message_buckets_are_independent_per_type
+    server = Termfront::Network::Server.new
+    player = {}
+    now = 100.0
+    state_limit = Termfront::Network::Server::RATE_LIMITS["state"]
+
+    state_limit.times { server.send(:allow_message, player, "state", now) }
+    refute server.send(:allow_message, player, "state", now)
+    assert server.send(:allow_message, player, "hit", now),
+           "hit bucket is independent of state bucket"
+  end
+
+  def test_position_delta_acceptable_within_speed_limit
+    server = Termfront::Network::Server.new
+    now = 100.0
+    # 0.033 sec at MOVE_SPEED (6 m/s) * 1.5 margin = 0.297 m max
+    assert server.send(:position_delta_acceptable?, 5.0, 5.0, now - 0.033, 5.1, 5.1, now)
+  end
+
+  def test_position_delta_acceptable_rejects_teleport
+    server = Termfront::Network::Server.new
+    now = 100.0
+    refute server.send(:position_delta_acceptable?, 5.0, 5.0, now - 0.033, 15.0, 15.0, now),
+           "teleport beyond MOVE_SPEED*dt*margin must be rejected"
+  end
+
+  def test_position_delta_acceptable_caps_dt
+    server = Termfront::Network::Server.new
+    now = 100.0
+    # Even if prev_at is far in the past, dt is capped at MAX_STATE_DT
+    # max_step = MOVE_SPEED * MAX_STATE_DT * margin = 6 * 0.5 * 1.5 = 4.5 m
+    refute server.send(:position_delta_acceptable?, 5.0, 5.0, now - 60.0, 15.0, 15.0, now),
+           "long prev_at must not allow arbitrary teleport (dt is capped)"
+  end
+
+  def test_position_delta_acceptable_first_state_bounded
+    server = Termfront::Network::Server.new
+    now = 100.0
+    # First state (prev_at: nil) uses dt = 0.1 → max_step = 0.9 m
+    assert server.send(:position_delta_acceptable?, 5.0, 5.0, nil, 5.5, 5.5, now)
+    refute server.send(:position_delta_acceptable?, 5.0, 5.0, nil, 10.0, 10.0, now)
+  end
+
+  def test_validate_float_enforces_range_and_type
+    server = Termfront::Network::Server.new
+
+    assert_in_delta 0.0, server.send(:validate_float, 0, min: 0, max: 100), 1e-9
+    assert_in_delta 99.5, server.send(:validate_float, 99.5, min: 0, max: 100), 1e-9
+    assert_nil server.send(:validate_float, -0.1, min: 0, max: 100)
+    assert_nil server.send(:validate_float, 100.1, min: 0, max: 100)
+    assert_nil server.send(:validate_float, Float::INFINITY, min: 0, max: 100)
+    assert_nil server.send(:validate_float, "50", min: 0, max: 100)
+  end
+
+  def test_validate_int_enforces_range_and_type
+    server = Termfront::Network::Server.new
+
+    assert_equal 0, server.send(:validate_int, 0, min: 0, max: 10)
+    assert_equal 10, server.send(:validate_int, 10, min: 0, max: 10)
+    assert_equal 5, server.send(:validate_int, 5.7, min: 0, max: 10)
+    assert_nil server.send(:validate_int, -1, min: 0, max: 10)
+    assert_nil server.send(:validate_int, 11, min: 0, max: 10)
+    assert_nil server.send(:validate_int, "5", min: 0, max: 10)
+    assert_nil server.send(:validate_int, nil, min: 0, max: 10)
+    assert_nil server.send(:validate_int, Float::NAN, min: 0, max: 10)
+  end
+
+  def test_normalize_weapon_accepts_whitelisted_names
+    server = Termfront::Network::Server.new
+    assert_equal :pistol, server.send(:normalize_weapon, "pistol")
+    assert_equal :ar, server.send(:normalize_weapon, "ar")
+    assert_equal :ar, server.send(:normalize_weapon, :ar)
+  end
+
+  def test_normalize_weapon_rejects_other_values
+    server = Termfront::Network::Server.new
+    assert_nil server.send(:normalize_weapon, "bogus")
+    assert_nil server.send(:normalize_weapon, nil)
+    assert_nil server.send(:normalize_weapon, 42)
+    assert_nil server.send(:normalize_weapon, "")
+  end
+
+  def test_match_timeout_reason_signals_ttl_after_max_duration
+    server = Termfront::Network::Server.new
+    now = 1000.0
+    started = now - Termfront::Network::Server::MATCH_MAX_DURATION - 1
+
+    assert_equal "match_ttl", server.send(:match_timeout_reason, now, started, now)
+  end
+
+  def test_match_timeout_reason_signals_idle_after_idle_timeout
+    server = Termfront::Network::Server.new
+    now = 1000.0
+    started = now - 10
+    stale = now - Termfront::Network::Server::MATCH_IDLE_TIMEOUT - 1
+
+    assert_equal "idle", server.send(:match_timeout_reason, now, started, stale)
+  end
+
+  def test_match_timeout_reason_returns_nil_during_active_match
+    server = Termfront::Network::Server.new
+    now = 1000.0
+
+    assert_nil server.send(:match_timeout_reason, now, now - 5, now - 1)
+  end
+
+  def test_supervise_match_catches_exception_and_closes_sockets
+    server = Termfront::Network::Server.new
+    sock = CloseableSocket.new(false)
+    server.send(:supervise_match, [{ socket: sock }]) { raise "boom" }
+
+    assert_equal true, sock.closed,
+                 "supervise_match must close sockets even when the body raises"
+  end
+
+  def test_supervise_match_closes_sockets_on_normal_exit
+    server = Termfront::Network::Server.new
+    sock = CloseableSocket.new(false)
+    server.send(:supervise_match, [{ socket: sock }]) { :ok }
+
+    assert_equal true, sock.closed,
+                 "supervise_match must always close sockets via ensure"
   end
 
   def test_pvp_server_spawns_are_walkable

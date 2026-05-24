@@ -3,6 +3,7 @@
 require "test_helper"
 require "tmpdir"
 require "openssl"
+require "json"
 
 class TestNetworkSecurity < Minitest::Test
   def test_connection_uses_peer_and_hostname_verification
@@ -46,6 +47,129 @@ class TestNetworkSecurity < Minitest::Test
       assert_equal false, default_store.verify(cert)
       assert_equal true, custom_store.verify(cert)
     end
+  end
+
+  def test_read_queue_request_rejects_oversize_payload_without_newline
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write("a" * (Termfront::Network::Server::MAX_MSG_BYTES + 1))
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_nil result, "client that floods bytes without a newline must be dropped"
+  ensure
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_times_out_on_silent_client
+    server = Termfront::Network::Server.new
+    timeout = Termfront::Network::Server::QUEUE_HANDSHAKE_TIMEOUT
+    assert timeout <= 10, "handshake timeout must stay short to avoid slowloris"
+
+    reader, writer = IO.pipe
+    started = Time.now
+    result = server.send(:read_queue_request, reader)
+    elapsed = Time.now - started
+
+    assert_nil result, "silent client must time out and be dropped, not assumed 1v1"
+    assert elapsed < timeout + 2, "read_queue_request should give up near the configured deadline"
+  ensure
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_accepts_matching_token
+    old = ENV["TERMFRONT_PVP_TOKEN"]
+    ENV["TERMFRONT_PVP_TOKEN"] = "valid_token"
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", team_size: 1, token: "valid_token" }) + "\n")
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_equal :pvp, result[:mode]
+  ensure
+    ENV["TERMFRONT_PVP_TOKEN"] = old
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_rejects_invalid_token
+    old = ENV["TERMFRONT_PVP_TOKEN"]
+    ENV["TERMFRONT_PVP_TOKEN"] = "valid_token"
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", team_size: 1, token: "wrong" }) + "\n")
+    writer.close_write
+
+    assert_nil server.send(:read_queue_request, reader),
+               "queue request with wrong token must be rejected"
+  ensure
+    ENV["TERMFRONT_PVP_TOKEN"] = old
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_rejects_missing_token_when_required
+    old = ENV["TERMFRONT_PVP_TOKEN"]
+    ENV["TERMFRONT_PVP_TOKEN"] = "valid_token"
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", team_size: 1 }) + "\n")
+    writer.close_write
+
+    assert_nil server.send(:read_queue_request, reader),
+               "queue request without token must be rejected when gating is enabled"
+  ensure
+    ENV["TERMFRONT_PVP_TOKEN"] = old
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_skips_token_check_when_env_unset
+    old = ENV["TERMFRONT_PVP_TOKEN"]
+    ENV.delete("TERMFRONT_PVP_TOKEN")
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", team_size: 1 }) + "\n")
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_equal :pvp, result[:mode],
+                 "gating must be opt-in via TERMFRONT_PVP_TOKEN"
+  ensure
+    ENV["TERMFRONT_PVP_TOKEN"] = old
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_rejects_unknown_mission_id
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", mode: "wavesfight", mission_id: "bogus", difficulty: 0 }) + "\n")
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_nil result, "unknown wavesfight mission_id must be rejected"
+  ensure
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_accepts_known_mission_id
+    known_id = Termfront::Mission::Base.wavesfight.first.new.id
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", mode: "wavesfight", mission_id: known_id, difficulty: 1 }) + "\n")
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_equal :wavesfight, result[:mode]
+    assert_equal known_id, result[:mission_id]
+  ensure
+    reader&.close
+    writer&.close
   end
 
   def test_self_signed_server_certificate_is_not_trusted_by_default_store

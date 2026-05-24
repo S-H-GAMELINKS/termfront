@@ -4,6 +4,7 @@ module Termfront
   module Network
     class Client
       TEAM_SIZES = [1, 2, 4].freeze
+      ALLOWED_WEAPONS = %w[pistol ar].freeze
 
       def initialize(stdout)
         @stdout = stdout
@@ -14,16 +15,16 @@ module Termfront
       end
 
       def run
-        addr = prompt_address
-        return unless addr
-
         team_size = prompt_team_size
         return unless team_size
 
-        host, port = addr.include?(":") ? addr.split(":", 2).then { |h, p| [h, p.to_i] } : [addr, Config::PVP_PORT]
+        host, port = Config::PVP_DEFAULT_ADDRESS.split(":", 2).then { |h, p| [h, p.to_i] }
+        queue_msg = { t: "queue", team_size: team_size }
+        token = ENV["TERMFRONT_PVP_TOKEN"]
+        queue_msg[:token] = token if token && !token.empty?
         begin
-          @conn.connect(host, port)
-          @conn.send_msg({ t: "queue", team_size: team_size })
+          @conn.connect(host, port, ca_file: ENV["TERMFRONT_TLS_CA_FILE"])
+          @conn.send_msg(queue_msg)
         rescue StandardError => e
           show_error("Connection failed: #{e.message}")
           return
@@ -44,52 +45,6 @@ module Termfront
       end
 
       private
-
-      def prompt_address
-        input = Config::PVP_DEFAULT_ADDRESS
-
-        STDIN.raw do |stdin|
-          loop do
-            rows, cols = @stdout.winsize
-            buf = TerminalOutput.begin_frame(home: true, clear: true)
-            lines = Array.new(rows) { " " * cols }
-
-            title = "PvP - Enter Server Address"
-            tc = [(cols - title.size) / 2 + 1, 1].max
-            lines[rows / 2 - 3] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;96m#{title}\e[0m", cols)
-
-            prompt = "> #{input}_"
-            pc = [(cols - prompt.size) / 2 + 1, 1].max
-            lines[rows / 2 - 1] = TerminalOutput.fit_ansi("#{" " * (pc - 1)}\e[97m> #{input}\e[5m_\e[0m", cols)
-
-            hint = "(Enter to continue, ESC to cancel)"
-            hc = [(cols - hint.size) / 2 + 1, 1].max
-            lines[rows / 2 + 1] = TerminalOutput.fit_ansi("#{" " * (hc - 1)}\e[90m#{hint}\e[0m", cols)
-
-            lines.each_with_index do |line, index|
-              buf << line
-              buf << "\r\n" if index < rows - 1
-            end
-            buf << TerminalOutput.end_frame
-            TerminalOutput.write_all(@stdout, buf)
-
-            next unless IO.select([stdin], nil, nil, Config::FRAME_DT)
-
-            begin
-              data = stdin.read_nonblock(64)
-              data.each_byte do |b|
-                case b
-                when 27 then return nil
-                when 13, 10 then return input.empty? ? Config::PVP_DEFAULT_ADDRESS : input
-                when 127, 8 then input = input[0...-1] unless input.empty?
-                when 32..126 then input << b.chr
-                end
-              end
-            rescue IO::WaitReadable
-            end
-          end
-        end
-      end
 
       def prompt_team_size
         selected = 0
@@ -310,7 +265,15 @@ module Termfront
           when "state"
             update_remote_state(msg)
           when "hit"
-            @player.apply_damage(msg[:d] || Config::PVP_HIT_DMG)
+            if msg.key?(:s) && msg.key?(:h)
+              @player.shield = msg[:s]
+              @player.health = msg[:h]
+              @player.last_damage = @player.game_time
+              @player.damage_flash = 3
+              @player.dead = msg[:h] <= 0
+            else
+              @player.apply_damage(msg[:d] || Config::PVP_HIT_DMG)
+            end
             @audio.play_se(:damage)
             notify_death_if_needed
           when "dead"
@@ -334,7 +297,8 @@ module Termfront
         remote[:current].angle = msg[:a]
         remote[:current].shield = msg[:s]
         remote[:current].health = msg[:h]
-        remote[:current].weapon = msg[:w]&.to_sym
+        weapon = safe_weapon(msg[:w])
+        remote[:current].weapon = weapon if weapon
         remote[:current].ammo = msg[:am]
         spawn_remote_projectile_effect(msg) if (remote[:current].fire_flash || 0) <= 0 && (msg[:ff] || 0) > 0
         remote[:current].fire_flash = msg[:ff] || 0
@@ -944,6 +908,15 @@ module Termfront
         spent = clock - frame_start
         remain = Config::FRAME_DT - spent
         sleep(remain) if remain > 0
+      end
+
+      def safe_weapon(value)
+        return nil unless value.is_a?(String) || value.is_a?(Symbol)
+
+        name = value.to_s
+        return nil unless ALLOWED_WEAPONS.include?(name)
+
+        name.to_sym
       end
     end
   end

@@ -72,6 +72,19 @@ Default PvP port is `7777`.
 
 The default multiplayer client address is `termfront.gamelinks007.net:443`.
 
+Set `TERMFRONT_TLS_CA_FILE` to trust an additional CA certificate when running the client against a server whose certificate chain is not in the system trust store:
+
+```bash
+TERMFRONT_TLS_CA_FILE=/path/to/ca.pem termfront
+```
+
+Set `TERMFRONT_PVP_TOKEN` on the server to require clients to present the same token before they can queue. Useful for limiting participation to a known group:
+
+```bash
+TERMFRONT_PVP_TOKEN=event_token termfront-server  # server side
+TERMFRONT_PVP_TOKEN=event_token termfront         # each authorized client
+```
+
 ## Controls
 
 - `W` `A` `S` `D`: move

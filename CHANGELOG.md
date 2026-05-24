@@ -6,15 +6,39 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
-### Security
-
-- Fixed PvP `route_hit` so the server always sends the fixed `Config::PVP_HIT_DMG` damage value, ignoring the attacker-supplied `d` field
-- Require `TERMFRONT_TLS_CERT_FILE` and `TERMFRONT_TLS_KEY_FILE` to be set and point to existing PEM files; removed the self-signed certificate generation fallback
+## [0.1.34] - 2026-05-25
 
 ### Fixed
 
+- Fixed PvP `route_hit` so the server always sends the fixed `Config::PVP_HIT_DMG` damage value, ignoring the attacker-supplied `d` field
+- Require `TERMFRONT_TLS_CERT_FILE` and `TERMFRONT_TLS_KEY_FILE` to be set and point to existing PEM files; removed the self-signed certificate generation fallback
+- Enforce TLS 1.2 as the minimum protocol version on both the multiplayer server and client
+- Stop logging client peer IP addresses on the multiplayer server
+- Connect multiplayer clients to the official server address only; remove the free-form server address input
+- Restrict audio manifest entries to paths under `data/audio/`
+- Reject Wavesfight co-op queue requests with unknown mission ids
+- Guard match worker threads against uncaught exceptions and ensure player sockets are closed
+- Cap each matchmaking queue at 64 waiting players and reject excess connections
+- Move per-connection handshake off the accept loop and drop silent clients after a short timeout
+- Cap server and client receive buffers and disconnect peers that flood bytes without a newline
+- End multiplayer matches after a maximum duration or when all players have been idle
+- Restrict the weapon field on multiplayer state messages to the legal loadout (`pistol`, `ar`)
+- Validate enemy / weapon / projectile type symbols received from the server against a fixed whitelist on the client side before converting to symbols
+- Validate position, ammo, and fire-flash fields on Wavesfight co-op state messages; reject the update when position is non-finite or outside the map
+- Validate PvP state fields (position, shield, health, ammo, fire-flash) before relaying to opponents; drop the relay when position is non-finite or outside the map
+- Reject multiplayer state messages whose position delta exceeds the maximum physical step from the previous server-known position
+- Rate-limit incoming multiplayer messages per type per player; sustained overflow ends the match for the offending client
+- Track PvP shield and health on the server; the server applies hit damage, regenerates shields between hits, and uses authoritative values when relaying state to opponents
+- Determine PvP hit targets server-side via raycast from the attacker's known position and facing; enforce weapon cooldown, firing cone, line-of-sight, and team checks instead of trusting the attacker-supplied target id
 - Wavesfight co-op shield no longer stays depleted: the server now regenerates shield and health after `Config::SHIELD_DELAY`, and the client plays the shield regeneration loop SE while regen is active
 - Wavesfight co-op now restores shield, health, and revives downed players between waves to match singleplayer behavior
+- Final Push: relocated the rightmost crawler off the dividing wall so it can be killed and the mission can complete
+
+### Added
+
+- Honor `TERMFRONT_TLS_CA_FILE` on multiplayer clients to trust an additional CA certificate
+- Optional shared-token authentication via `TERMFRONT_PVP_TOKEN`; when set on the server, queue requests must carry a matching token (sent automatically when the client has the same env var)
+- Wavesfight co-op now generates weapon drops when enemies are killed; the `E` key picks up the nearest drop within `Config::PICKUP_RADIUS`, swapping the current weapon (which is dropped at the player's position) and tracking obtained weapons per-player so cheaters cannot claim weapons they have not picked up
 
 ## [0.1.3] - 2026-05-24
 

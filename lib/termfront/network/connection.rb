@@ -8,6 +8,8 @@ require "time"
 module Termfront
   module Network
     class Connection
+      MAX_MSG_BYTES = 64 * 1024
+
       PeerInfo = Struct.new(
         :certificate_sha256,
         :public_key_sha256,
@@ -63,6 +65,11 @@ module Termfront
           begin
             data = @sock.read_nonblock(4096)
             @buf << data
+
+            if @buf.bytesize > MAX_MSG_BYTES
+              close
+              break
+            end
 
             while (nl = @buf.index("\n"))
               line = @buf.slice!(0, nl + 1)
@@ -120,6 +127,7 @@ module Termfront
         ctx = OpenSSL::SSL::SSLContext.new
         ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
         ctx.verify_hostname = true if ctx.respond_to?(:verify_hostname=)
+        ctx.min_version = OpenSSL::SSL::TLS1_2_VERSION
         ctx.cert_store = build_cert_store(ca_file: ca_file)
         ctx
       end
