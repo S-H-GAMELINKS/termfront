@@ -79,6 +79,71 @@ class TestNetworkSecurity < Minitest::Test
     writer&.close
   end
 
+  def test_read_queue_request_accepts_matching_token
+    old = ENV["TERMFRONT_PVP_TOKEN"]
+    ENV["TERMFRONT_PVP_TOKEN"] = "valid_token"
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", team_size: 1, token: "valid_token" }) + "\n")
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_equal :pvp, result[:mode]
+  ensure
+    ENV["TERMFRONT_PVP_TOKEN"] = old
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_rejects_invalid_token
+    old = ENV["TERMFRONT_PVP_TOKEN"]
+    ENV["TERMFRONT_PVP_TOKEN"] = "valid_token"
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", team_size: 1, token: "wrong" }) + "\n")
+    writer.close_write
+
+    assert_nil server.send(:read_queue_request, reader),
+               "queue request with wrong token must be rejected"
+  ensure
+    ENV["TERMFRONT_PVP_TOKEN"] = old
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_rejects_missing_token_when_required
+    old = ENV["TERMFRONT_PVP_TOKEN"]
+    ENV["TERMFRONT_PVP_TOKEN"] = "valid_token"
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", team_size: 1 }) + "\n")
+    writer.close_write
+
+    assert_nil server.send(:read_queue_request, reader),
+               "queue request without token must be rejected when gating is enabled"
+  ensure
+    ENV["TERMFRONT_PVP_TOKEN"] = old
+    reader&.close
+    writer&.close
+  end
+
+  def test_read_queue_request_skips_token_check_when_env_unset
+    old = ENV["TERMFRONT_PVP_TOKEN"]
+    ENV.delete("TERMFRONT_PVP_TOKEN")
+    server = Termfront::Network::Server.new
+    reader, writer = IO.pipe
+    writer.write(JSON.generate({ t: "queue", team_size: 1 }) + "\n")
+    writer.close_write
+
+    result = server.send(:read_queue_request, reader)
+    assert_equal :pvp, result[:mode],
+                 "gating must be opt-in via TERMFRONT_PVP_TOKEN"
+  ensure
+    ENV["TERMFRONT_PVP_TOKEN"] = old
+    reader&.close
+    writer&.close
+  end
+
   def test_read_queue_request_rejects_unknown_mission_id
     server = Termfront::Network::Server.new
     reader, writer = IO.pipe

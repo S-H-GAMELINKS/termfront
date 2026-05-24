@@ -204,6 +204,7 @@ module Termfront
               next
             end
             next unless msg[:t] == "queue"
+            return nil unless queue_token_acceptable?(msg)
 
             if msg[:mode].to_s == "wavesfight"
               mission_id = msg[:mission_id].to_s
@@ -526,6 +527,22 @@ module Termfront
         return nil if f < min || f > max
 
         f
+      end
+
+      def expected_pvp_token
+        token = ENV["TERMFRONT_PVP_TOKEN"]
+        token.nil? || token.empty? ? nil : token
+      end
+
+      def queue_token_acceptable?(msg)
+        expected = expected_pvp_token
+        return true if expected.nil?
+
+        provided = msg[:token]
+        return false unless provided.is_a?(String)
+        return false unless provided.bytesize == expected.bytesize
+
+        OpenSSL.fixed_length_secure_compare(provided, expected)
       end
 
       def normalize_weapon(value)

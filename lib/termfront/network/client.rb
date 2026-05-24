@@ -19,9 +19,12 @@ module Termfront
         return unless team_size
 
         host, port = Config::PVP_DEFAULT_ADDRESS.split(":", 2).then { |h, p| [h, p.to_i] }
+        queue_msg = { t: "queue", team_size: team_size }
+        token = ENV["TERMFRONT_PVP_TOKEN"]
+        queue_msg[:token] = token if token && !token.empty?
         begin
           @conn.connect(host, port, ca_file: ENV["TERMFRONT_TLS_CA_FILE"])
-          @conn.send_msg({ t: "queue", team_size: team_size })
+          @conn.send_msg(queue_msg)
         rescue StandardError => e
           show_error("Connection failed: #{e.message}")
           return

@@ -32,6 +32,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Added
 
 - Honor `TERMFRONT_TLS_CA_FILE` on multiplayer clients to trust an additional CA certificate
+- Optional shared-token authentication via `TERMFRONT_PVP_TOKEN`; when set on the server, queue requests must carry a matching token (sent automatically when the client has the same env var)
 
 ### Fixed
 

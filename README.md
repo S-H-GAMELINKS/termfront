@@ -78,6 +78,13 @@ Set `TERMFRONT_TLS_CA_FILE` to trust an additional CA certificate when running t
 TERMFRONT_TLS_CA_FILE=/path/to/ca.pem termfront
 ```
 
+Set `TERMFRONT_PVP_TOKEN` on the server to require clients to present the same token before they can queue. Useful for limiting participation to a known group:
+
+```bash
+TERMFRONT_PVP_TOKEN=event_token termfront-server  # server side
+TERMFRONT_PVP_TOKEN=event_token termfront         # each authorized client
+```
+
 ## Controls
 
 - `W` `A` `S` `D`: move
