@@ -321,6 +321,39 @@ class TestTermfront < Minitest::Test
     assert_nil client.send(:safe_weapon, nil)
   end
 
+  def test_valid_position_accepts_finite_in_bounds
+    server = Termfront::Network::Server.new
+    map = Termfront::Map.new(["####", "#..#", "####"])
+
+    assert server.send(:valid_position?, { x: 1.5, y: 1.5, a: 0.0 }, map)
+    assert server.send(:valid_position?, { x: 1, y: 1, a: 0 }, map)
+  end
+
+  def test_valid_position_rejects_non_finite_and_out_of_bounds
+    server = Termfront::Network::Server.new
+    map = Termfront::Map.new(["####", "#..#", "####"])
+
+    refute server.send(:valid_position?, { x: Float::NAN, y: 1.5, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: 1.5, y: Float::INFINITY, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: -1.0, y: 1.5, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: 100.0, y: 1.5, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: "1.5", y: 1.5, a: 0.0 }, map)
+    refute server.send(:valid_position?, { x: nil, y: 1.5, a: 0.0 }, map)
+  end
+
+  def test_validate_int_enforces_range_and_type
+    server = Termfront::Network::Server.new
+
+    assert_equal 0, server.send(:validate_int, 0, min: 0, max: 10)
+    assert_equal 10, server.send(:validate_int, 10, min: 0, max: 10)
+    assert_equal 5, server.send(:validate_int, 5.7, min: 0, max: 10)
+    assert_nil server.send(:validate_int, -1, min: 0, max: 10)
+    assert_nil server.send(:validate_int, 11, min: 0, max: 10)
+    assert_nil server.send(:validate_int, "5", min: 0, max: 10)
+    assert_nil server.send(:validate_int, nil, min: 0, max: 10)
+    assert_nil server.send(:validate_int, Float::NAN, min: 0, max: 10)
+  end
+
   def test_normalize_weapon_accepts_whitelisted_names
     server = Termfront::Network::Server.new
     assert_equal :pistol, server.send(:normalize_weapon, "pistol")

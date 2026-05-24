@@ -367,6 +367,31 @@ module Termfront
         end
       end
 
+      def valid_position?(msg, map)
+        x = msg[:x]
+        y = msg[:y]
+        a = msg[:a]
+        return false unless x.is_a?(Numeric) && y.is_a?(Numeric) && a.is_a?(Numeric)
+
+        fx = x.to_f
+        fy = y.to_f
+        fa = a.to_f
+        return false unless fx.finite? && fy.finite? && fa.finite?
+        return false if fx < 0 || fx >= map.width
+        return false if fy < 0 || fy >= map.height
+
+        true
+      end
+
+      def validate_int(value, min:, max:)
+        return nil unless value.is_a?(Numeric) && value.to_f.finite?
+
+        int = value.to_i
+        return nil if int < min || int > max
+
+        int
+      end
+
       def normalize_weapon(value)
         return nil unless value.is_a?(String) || value.is_a?(Symbol)
 
@@ -519,13 +544,19 @@ module Termfront
           when "ping"
             send_json(player[:socket], { t: "pong", ts: msg[:ts] })
           when "state"
-            player[:x] = msg[:x]
-            player[:y] = msg[:y]
-            player[:angle] = msg[:a]
+            next unless valid_position?(msg, session[:map])
+
+            player[:x] = msg[:x].to_f
+            player[:y] = msg[:y].to_f
+            player[:angle] = msg[:a].to_f
             weapon = normalize_weapon(msg[:w])
             player[:weapon] = weapon if weapon
-            player[:ammo] = msg[:am] if msg.key?(:am)
-            player[:fire_flash] = msg[:ff] || 0
+            if msg.key?(:am)
+              ammo = validate_int(msg[:am], min: 0, max: 999)
+              player[:ammo] = ammo if ammo
+            end
+            ff = validate_int(msg[:ff], min: 0, max: 10)
+            player[:fire_flash] = ff || 0
           when "fire"
             player[:fire_flash] = 4
             process_wavesfight_fire(session, player)
