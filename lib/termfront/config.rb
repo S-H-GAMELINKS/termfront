@@ -29,6 +29,7 @@ module Termfront
 
     RADAR_RADIUS = 3
     RADAR_RANGE  = 12.0
+    RADAR_RANGE_SQ = RADAR_RANGE * RADAR_RANGE
 
     PVP_PORT    = 7777
     PVP_DEFAULT_ADDRESS = "termfront.gamelinks007.net:443"

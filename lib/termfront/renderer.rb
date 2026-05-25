@@ -267,8 +267,7 @@ module Termfront
 
         ex = e.x - player.x
         ey = e.y - player.y
-        dist = Math.sqrt(ex * ex + ey * ey)
-        next if dist > Config::RADAR_RANGE
+        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
@@ -286,8 +285,7 @@ module Termfront
       drops.each do |d|
         ex = d.x - player.x
         ey = d.y - player.y
-        dist = Math.sqrt(ex * ex + ey * ey)
-        next if dist > Config::RADAR_RANGE
+        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
@@ -305,8 +303,7 @@ module Termfront
       terminals.each do |terminal|
         ex = terminal[:x] - player.x
         ey = terminal[:y] - player.y
-        dist = Math.sqrt(ex * ex + ey * ey)
-        next if dist > Config::RADAR_RANGE
+        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
@@ -324,8 +321,7 @@ module Termfront
       allies.each do |ally|
         ex = ally.x - player.x
         ey = ally.y - player.y
-        dist = Math.sqrt(ex * ex + ey * ey)
-        next if dist > Config::RADAR_RANGE
+        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
