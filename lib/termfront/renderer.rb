@@ -281,17 +281,31 @@ module Termfront
     end
 
     def build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
-      virt_h.times do |vr|
-        row = @pixels[vr]
-        view_w.times do |c|
-          row[c] = if vr < wtop[c]
-                     Config::CEIL_C
-                   elsif vr < wbot[c]
-                     wcol[c]
-                   else
-                     Config::FLOOR_C
-                   end
+      ceil_c = Config::CEIL_C
+      floor_c = Config::FLOOR_C
+      pixels = @pixels
+
+      c = 0
+      while c < view_w
+        wt = wtop[c]
+        wb = wbot[c]
+        wc = wcol[c]
+
+        vr = 0
+        while vr < wt && vr < virt_h
+          pixels[vr][c] = ceil_c
+          vr += 1
         end
+        while vr < wb && vr < virt_h
+          pixels[vr][c] = wc
+          vr += 1
+        end
+        while vr < virt_h
+          pixels[vr][c] = floor_c
+          vr += 1
+        end
+
+        c += 1
       end
     end
 
