@@ -4,6 +4,8 @@ module Termfront
   class Renderer
     def initialize(stdout)
       @stdout = stdout
+      @buf_view_w = 0
+      @buf_virt_h = 0
     end
 
     def render(player:, map:, enemies:, projectiles:, drops:, terminals: [], status_line: nil, allies: [])
@@ -16,38 +18,35 @@ module Termfront
       view_w = cols
       virt_h = view_h * 2
 
+      prepare_frame_buffers(view_w, virt_h)
+
       dx = Math.cos(player.angle)
       dy = Math.sin(player.angle)
       plane_x = -dy * Math.tan(Config::FOV / 2.0)
       plane_y = dx * Math.tan(Config::FOV / 2.0)
 
-      dists = Array.new(view_w)
-      sides = Array.new(view_w)
       view_w.times do |c|
         cam = 2.0 * c / view_w - 1.0
-        dists[c], sides[c] = cast_ray(map, player.x, player.y, dx + plane_x * cam, dy + plane_y * cam)
+        @dists[c], @sides[c] = cast_ray(map, player.x, player.y, dx + plane_x * cam, dy + plane_y * cam)
       end
 
       vmid = virt_h / 2.0
-      wtop = Array.new(view_w)
-      wbot = Array.new(view_w)
-      wcol = Array.new(view_w)
       view_w.times do |c|
-        d = dists[c]
+        d = @dists[c]
         lh = d > 0.01 ? (virt_h / d).to_i : virt_h
-        wtop[c] = [(vmid - lh / 2.0).to_i, 0].max
-        wbot[c] = [(vmid + lh / 2.0).to_i, virt_h].min
-        wcol[c] = Sprite.wall_brightness(d, sides[c])
+        @wtop[c] = [(vmid - lh / 2.0).to_i, 0].max
+        @wbot[c] = [(vmid + lh / 2.0).to_i, virt_h].min
+        @wcol[c] = Sprite.wall_brightness(d, @sides[c])
       end
-      pixels = build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
-      overlay_enemies_3d(pixels, view_h, view_w, dists, player, enemies, projectiles, drops)
-      overlay_allies_3d(pixels, view_h, view_w, dists, player, allies)
-      overlay_damage_flash(pixels, view_h, view_w, player)
+      build_view_pixels(virt_h, view_w, @wtop, @wbot, @wcol)
+      overlay_enemies_3d(@pixels, view_h, view_w, @dists, player, enemies, projectiles, drops)
+      overlay_allies_3d(@pixels, view_h, view_w, @dists, player, allies)
+      overlay_damage_flash(@pixels, view_h, view_w, player)
 
       buf = TerminalOutput.begin_frame(home: true)
 
       render_hud(buf, cols, player, drops, terminals, status_line)
-      render_view(buf, view_h, view_w, pixels)
+      render_view(buf, view_h, view_w, @pixels)
       buf << "\e[#{3 + view_h};1H"
       render_radar(buf, cols, radar_h, player, enemies, drops, terminals, allies)
       render_crosshair(buf, view_h, view_w, cols, player)
@@ -132,6 +131,19 @@ module Termfront
 
     private
 
+    def prepare_frame_buffers(view_w, virt_h)
+      if @buf_view_w != view_w || @buf_virt_h != virt_h
+        @buf_view_w = view_w
+        @buf_virt_h = virt_h
+        @dists = Array.new(view_w)
+        @sides = Array.new(view_w)
+        @wtop  = Array.new(view_w)
+        @wbot  = Array.new(view_w)
+        @wcol  = Array.new(view_w)
+        @pixels = Array.new(virt_h) { Array.new(view_w) }
+      end
+    end
+
     def render_hud(buf, cols, player, drops, terminals, status_line)
       bar_w = [cols - 20, 10].max
       pct = player.shield / Config::SHIELD_MAX.to_f
@@ -180,9 +192,8 @@ module Termfront
     end
 
     def build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
-      pixels = Array.new(virt_h) { Array.new(view_w) }
       virt_h.times do |vr|
-        row = pixels[vr]
+        row = @pixels[vr]
         view_w.times do |c|
           row[c] = if vr < wtop[c]
                      Config::CEIL_C
@@ -193,7 +204,6 @@ module Termfront
                    end
         end
       end
-      pixels
     end
 
     def render_view(buf, view_h, view_w, pixels)
