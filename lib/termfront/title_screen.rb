@@ -13,6 +13,15 @@ module Termfront
       @demo_wp_idx = 0
       @demo_wp_t = 0.0
       @demo_fire = 0
+
+      mission_class = Mission::Base.campaign.first
+      if mission_class
+        m = mission_class.new
+        @demo_map = m.map_data.map { |row| row.is_a?(Array) ? row : row.chars }.freeze
+        @demo_map_h = @demo_map.size
+        @demo_map_w = @demo_map[0].size
+        @demo_enemies = m.enemy_defs.freeze
+      end
     end
 
     def show
@@ -80,13 +89,11 @@ module Termfront
       virt_h = th * 2
       color = Array.new(tw * virt_h, nil)
 
-      mission = Mission::Base.campaign.first
-      return unless mission
+      return unless @demo_map
 
-      m = mission.new
-      demo_map = m.map_data.map { |r| r.is_a?(Array) ? r : r.chars }
-      dm_h = demo_map.size
-      dm_w = demo_map[0].size
+      demo_map = @demo_map
+      dm_h = @demo_map_h
+      dm_w = @demo_map_w
 
       @demo_wp_t += Config::DEMO_SPEED
       if @demo_wp_t >= 1.0
@@ -188,7 +195,7 @@ module Termfront
       end
 
       # Demo enemies
-      demo_enemies = m.enemy_defs
+      demo_enemies = @demo_enemies
       ddx = Math.cos(cam_a)
       ddy = Math.sin(cam_a)
       ppx = -ddy * Math.tan(fov / 2.0)
