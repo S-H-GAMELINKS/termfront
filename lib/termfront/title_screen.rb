@@ -24,11 +24,15 @@ module Termfront
       TerminalOutput.write_all(@stdout, TerminalOutput.begin_frame(home: true, clear: true) + TerminalOutput.end_frame)
 
       STDIN.raw do |stdin|
+        last_render = clock - Config::RENDER_DT
         loop do
           now = clock
           @title_spin += 0.015
 
-          render
+          if now - last_render >= Config::RENDER_DT
+            render
+            last_render = now
+          end
 
           while IO.select([stdin], nil, nil, 0)
             begin

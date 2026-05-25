@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Inline the color-mode branching and SGR lookups into `Renderer#render_view` to remove per-cell `bg_only?`, `ansi_fg`, and `ansi_bg` method calls (about 72,000 calls per second at 30 Hz on an 80-wide terminal)
 - Enable YJIT on startup so the hot Ruby methods in the renderer (`build_view_pixels`, `render_view`, `cast_ray`, etc.) get JIT-compiled instead of interpreted
 - Rewrite `TerminalOutput.fit_ansi` to walk the input by byte index with `getbyte` and `byteslice` instead of scanning with a regular expression, removing the per-line `Regexp#match` / `MatchData` allocations that dominated the renderer's CPU profile under YJIT
+- Render the title screen at 30 Hz while still advancing its spin animation and polling input at 60 Hz, so the per-frame renderer cost halves without making the demo motion feel choppy
 
 ## [0.1.5] - 2026-05-25
 
