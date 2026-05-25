@@ -15,6 +15,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Reuse renderer sprite collection arrays and the radar line buffer across frames, and sort sprites with a comparator block instead of `sort_by`
 - Cache the terminal `winsize` inside the renderer and invalidate the cache from a `SIGWINCH` handler instead of issuing an ioctl every frame
 - PvP hit raycast now culls candidates beyond `MAX_PVP_RANGE` and skips the line-of-sight check when the candidate is already farther than the current best
+- Multiplayer server `broadcast` now serializes each outgoing message once and writes the same JSON line to every recipient
 
 ### Fixed
 

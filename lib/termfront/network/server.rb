@@ -452,15 +452,20 @@ module Termfront
       end
 
       def broadcast(roster, msg, except: nil)
+        line = JSON.generate(msg) + "\n"
         roster.each do |player|
           next if player[:id] == except
 
-          send_json(player[:socket], msg)
+          write_line(player[:socket], line)
         end
       end
 
       def send_json(socket, msg)
-        socket.write(JSON.generate(msg) + "\n")
+        write_line(socket, JSON.generate(msg) + "\n")
+      end
+
+      def write_line(socket, line)
+        socket.write(line)
       rescue Errno::EPIPE, Errno::ECONNRESET, IOError, OpenSSL::SSL::SSLError
         nil
       end
