@@ -707,4 +707,25 @@ class TestTermfront < Minitest::Test
       assert_equal false, map.blocked?(x, y), "spawn #{spawn.inspect} should be walkable"
     end
   end
+
+  def test_wavesfight_server_replenish_restores_full_shield_for_all_players
+    server = Termfront::Network::Server.new
+    clock = 100.0
+    session = wavesfight_test_session(clock)
+
+    damaged = wavesfight_test_player(shield: 30.0, last_damage: clock - 0.1)
+    dead = wavesfight_test_player(shield: 0.0, last_damage: clock - 0.1)
+    dead[:alive] = false
+    untouched = wavesfight_test_player(shield: Termfront::Config::SHIELD_MAX.to_f,
+                                       last_damage: clock - 1000.0)
+    roster = [damaged, dead, untouched]
+
+    server.send(:replenish_wavesfight_roster, roster, session)
+
+    roster.each do |player|
+      assert_equal Termfront::Config::SHIELD_MAX, player[:shield],
+                   "shield must be restored to SHIELD_MAX after wave advance"
+      assert player[:alive], "downed players must be revived after wave advance"
+    end
+  end
 end

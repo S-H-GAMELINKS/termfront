@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed
+
+- Wavesfight wave advance now fully restores each surviving and revived player's shield to `Config::SHIELD_MAX`; previously only a +35 partial recovery was applied, which left revived players at 35%
+
 ## [0.1.34] - 2026-05-25
 
 ### Fixed

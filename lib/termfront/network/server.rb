@@ -919,7 +919,7 @@ module Termfront
 
       def replenish_wavesfight_roster(roster, session)
         roster.each do |player|
-          player[:shield] = [player[:shield] + 35.0, Config::SHIELD_MAX].min
+          player[:shield] = Config::SHIELD_MAX
           player[:health] = [player[:health] + 20.0, Config::HEALTH_MAX].min
           player[:last_damage] = session[:clock] - Config::SHIELD_DELAY
           player[:alive] = true
