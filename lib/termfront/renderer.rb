@@ -19,6 +19,10 @@ module Termfront
       @radar_grid_template = build_radar_grid_template
       @hrule_cache = Hash.new { |h, c| h[c] = ("\xE2\x94\x80" * c)[0, c * 3].freeze }
       @radar_drop_glyphs = {}
+      @radar_enemy_cells = {}
+      @radar_drop_cells = {}
+      @radar_terminal_cells = {}
+      @radar_ally_cells = {}
       @fg_truecolor_cache = {}
       @bg_truecolor_cache = {}
       @enemy_sprites = []
@@ -363,82 +367,97 @@ module Termfront
 
       r = Config::RADAR_RADIUS
       diam = r * 2 + 1
+      range = Config::RADAR_RANGE
+      range_sq = Config::RADAR_RANGE_SQ
+      r_sq = r * r
       grid = @radar_grid_template
 
       cos_a = Math.cos(-player.angle + Math::PI / 2)
       sin_a = Math.sin(-player.angle + Math::PI / 2)
-      enemy_cells = {}
+      px = player.x
+      py = player.y
+
+      enemy_cells = @radar_enemy_cells
+      drop_cells = @radar_drop_cells
+      terminal_cells = @radar_terminal_cells
+      ally_cells = @radar_ally_cells
+      enemy_cells.clear
+      drop_cells.clear
+      terminal_cells.clear
+      ally_cells.clear
+
       enemies.each do |e|
         next unless e.alive
 
-        ex = e.x - player.x
-        ey = e.y - player.y
-        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
+        ex = e.x - px
+        ey = e.y - py
+        next if ex * ex + ey * ey > range_sq
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
-        sx = r + (rx / Config::RADAR_RANGE * r).round
-        sy = r + (ry / Config::RADAR_RANGE * r).round
-        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+        sx = r + (rx / range * r).round
+        sy = r + (ry / range * r).round
+        next if sx < 0 || sx >= diam || sy < 0 || sy >= diam
 
-        d2 = (sx - r)**2 + (sy - r)**2
-        next if d2 > r * r
+        dxr = sx - r
+        dyr = sy - r
+        next if dxr * dxr + dyr * dyr > r_sq
 
-        enemy_cells[[sy, sx]] = e.sprite_id
+        enemy_cells[sy * diam + sx] = e.sprite_id
       end
 
-      drop_cells = {}
       drops.each do |d|
-        ex = d.x - player.x
-        ey = d.y - player.y
-        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
+        ex = d.x - px
+        ey = d.y - py
+        next if ex * ex + ey * ey > range_sq
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
-        sx = r + (rx / Config::RADAR_RANGE * r).round
-        sy = r + (ry / Config::RADAR_RANGE * r).round
-        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+        sx = r + (rx / range * r).round
+        sy = r + (ry / range * r).round
+        next if sx < 0 || sx >= diam || sy < 0 || sy >= diam
 
-        d2 = (sx - r)**2 + (sy - r)**2
-        next if d2 > r * r
+        dxr = sx - r
+        dyr = sy - r
+        next if dxr * dxr + dyr * dyr > r_sq
 
-        drop_cells[[sy, sx]] = d
+        drop_cells[sy * diam + sx] = d
       end
 
-      terminal_cells = {}
       terminals.each do |terminal|
-        ex = terminal[:x] - player.x
-        ey = terminal[:y] - player.y
-        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
+        ex = terminal[:x] - px
+        ey = terminal[:y] - py
+        next if ex * ex + ey * ey > range_sq
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
-        sx = r + (rx / Config::RADAR_RANGE * r).round
-        sy = r + (ry / Config::RADAR_RANGE * r).round
-        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+        sx = r + (rx / range * r).round
+        sy = r + (ry / range * r).round
+        next if sx < 0 || sx >= diam || sy < 0 || sy >= diam
 
-        d2 = (sx - r)**2 + (sy - r)**2
-        next if d2 > r * r
+        dxr = sx - r
+        dyr = sy - r
+        next if dxr * dxr + dyr * dyr > r_sq
 
-        terminal_cells[[sy, sx]] = terminal
+        terminal_cells[sy * diam + sx] = terminal
       end
 
-      ally_cells = {}
       allies.each do |ally|
-        ex = ally.x - player.x
-        ey = ally.y - player.y
-        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
+        ex = ally.x - px
+        ey = ally.y - py
+        next if ex * ex + ey * ey > range_sq
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
-        sx = r + (rx / Config::RADAR_RANGE * r).round
-        sy = r + (ry / Config::RADAR_RANGE * r).round
-        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+        sx = r + (rx / range * r).round
+        sy = r + (ry / range * r).round
+        next if sx < 0 || sx >= diam || sy < 0 || sy >= diam
 
-        d2 = (sx - r)**2 + (sy - r)**2
-        next if d2 > r * r
+        dxr = sx - r
+        dyr = sy - r
+        next if dxr * dxr + dyr * dyr > r_sq
 
-        ally_cells[[sy, sx]] = true
+        ally_cells[sy * diam + sx] = true
       end
 
       alive_count = enemies.count(&:alive)
@@ -446,21 +465,25 @@ module Termfront
       info_lines = [
         "Enemies: #{alive_count}/#{total_count}",
         "Heading: #{format("%.0f", (player.angle % (Math::PI * 2)) * 180 / Math::PI)}\xC2\xB0",
-        "Pos: (#{"%.1f" % player.x}, #{"%.1f" % player.y})  T:terminal"
+        "Pos: (#{"%.1f" % px}, #{"%.1f" % py})  T:terminal"
       ]
 
-      radar_h.times do |row|
+      row = 0
+      while row < radar_h
         line = @radar_line_buf.clear
         if row < diam
           line << "  "
-          diam.times do |cx|
-            if (etype = enemy_cells[[row, cx]])
+          cx = 0
+          base = row * diam
+          while cx < diam
+            key = base + cx
+            if (etype = enemy_cells[key])
               line << (etype == :executor ? RADAR_EXECUTOR : RADAR_CRAWLER)
-            elsif ally_cells[[row, cx]]
+            elsif ally_cells[key]
               line << RADAR_ALLY
-            elsif (drop = drop_cells[[row, cx]])
+            elsif (drop = drop_cells[key])
               line << radar_drop_glyph(drop)
-            elsif terminal_cells[[row, cx]]
+            elsif terminal_cells[key]
               line << RADAR_TERMINAL
             elsif row == r && cx == r
               line << RADAR_PLAYER
@@ -469,11 +492,13 @@ module Termfront
             else
               line << grid[row][cx]
             end
+            cx += 1
           end
           line << (row < info_lines.size ? "    #{info_lines[row]}" : "")
         end
         buf << TerminalOutput.fit_ansi(line, cols)
         buf << "\r\n" if row < radar_h - 1
+        row += 1
       end
     end
 
