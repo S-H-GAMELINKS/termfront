@@ -28,6 +28,10 @@ module Termfront
       @radar_line_buf = +""
       @size_cache = nil
       @size_cache_at = -Float::INFINITY
+      @cached_hud_shield_key = nil
+      @cached_hud_shield_line = nil
+      @cached_hud_ammo_key = nil
+      @cached_hud_ammo_line = nil
     end
 
     def invalidate_size_cache!
@@ -211,6 +215,14 @@ module Termfront
     end
 
     def render_hud(buf, cols, player, drops, terminals, status_line)
+      buf << hud_shield_line(cols, player, status_line) << "\r\n"
+      buf << hud_ammo_line(cols, player, drops, terminals) << "\r\n"
+    end
+
+    def hud_shield_line(cols, player, status_line)
+      key = [player.shield.to_i, status_line, cols]
+      return @cached_hud_shield_line if @cached_hud_shield_key == key
+
       bar_w = [cols - 20, 10].max
       pct = player.shield / Config::SHIELD_MAX.to_f
       filled = (pct * bar_w).to_i
@@ -226,11 +238,23 @@ module Termfront
       shield_str = "SHIELD #{color}#{"█" * filled}#{"░" * empty}\e[0m #{pct_s}"
       shield_str = "#{shield_str}\e[90m#{status_line}\e[0m" if status_line
       pad = [(cols - bar_w - 15) / 2, 0].max
-      buf << TerminalOutput.fit_ansi("#{" " * pad}#{shield_str}", cols) << "\r\n"
+      line = TerminalOutput.fit_ansi("#{" " * pad}#{shield_str}", cols)
 
+      @cached_hud_shield_key = key
+      @cached_hud_shield_line = line
+      line
+    end
+
+    def hud_ammo_line(cols, player, drops, terminals)
       weapon = player.current_weapon
-      wcolor = weapon.type_id.to_s.start_with?("shock") ? "\e[96m" : "\e[97m"
+      can_pickup = drops.any? { |d| d.in_range?(player.x, player.y) }
+      can_use_terminal = terminals.any? do |terminal|
+        (terminal[:x] - player.x)**2 + (terminal[:y] - player.y)**2 < Config::TERMINAL_USE_RADIUS**2
+      end
+      key = [weapon.type_id, weapon.ammo, can_pickup, can_use_terminal, cols]
+      return @cached_hud_ammo_line if @cached_hud_ammo_key == key
 
+      wcolor = weapon.type_id.to_s.start_with?("shock") ? "\e[96m" : "\e[97m"
       if weapon.max_ammo
         ammo_bar_w = 12
         ammo_pct = weapon.ammo.to_f / weapon.max_ammo
@@ -241,10 +265,6 @@ module Termfront
         ammo_str = "#{wcolor}#{weapon.name}\e[0m [\xe2\x88\x9e]"
       end
 
-      can_pickup = drops.any? { |d| d.in_range?(player.x, player.y) }
-      can_use_terminal = terminals.any? do |terminal|
-        (terminal[:x] - player.x)**2 + (terminal[:y] - player.y)**2 < Config::TERMINAL_USE_RADIUS**2
-      end
       interact_str = if can_use_terminal
                        "\e[1;96m[E]Use Terminal\e[0m"
                      elsif can_pickup
@@ -253,8 +273,11 @@ module Termfront
                        "E:interact"
                      end
 
-      line = "#{ammo_str}  T:swap  #{interact_str}  Space:fire"
-      buf << TerminalOutput.fit_ansi(line, cols) << "\r\n"
+      line = TerminalOutput.fit_ansi("#{ammo_str}  T:swap  #{interact_str}  Space:fire", cols)
+
+      @cached_hud_ammo_key = key
+      @cached_hud_ammo_line = line
+      line
     end
 
     def build_view_pixels(virt_h, view_w, wtop, wbot, wcol)

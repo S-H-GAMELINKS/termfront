@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Changed
+
+- Memoize the HUD shield and ammo lines so `fit_ansi` only re-runs when the shown shield value, weapon, ammo, pickup hint, or terminal width actually change
+
 ## [0.1.5] - 2026-05-25
 
 ### Changed
