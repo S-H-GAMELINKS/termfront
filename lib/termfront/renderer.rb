@@ -9,6 +9,9 @@ module Termfront
     RADAR_PLAYER   = "\e[92m^\e[0m"
     RADAR_WALL     = "\e[90m#\e[0m"
 
+    FG_256 = Array.new(256) { |i| "\e[38;5;#{i}m".freeze }.freeze
+    BG_256 = Array.new(256) { |i| "\e[48;5;#{i}m".freeze }.freeze
+
     def initialize(stdout)
       @stdout = stdout
       @buf_view_w = 0
@@ -16,6 +19,8 @@ module Termfront
       @radar_grid_template = build_radar_grid_template
       @hrule_cache = Hash.new { |h, c| h[c] = ("\xE2\x94\x80" * c)[0, c * 3].freeze }
       @radar_drop_glyphs = {}
+      @fg_truecolor_cache = {}
+      @bg_truecolor_cache = {}
     end
 
     def render(player:, map:, enemies:, projectiles:, drops:, terminals: [], status_line: nil, allies: [])
@@ -720,17 +725,17 @@ module Termfront
 
     def ansi_fg(color)
       if color.is_a?(Integer)
-        "\e[38;5;#{color}m"
+        FG_256[color]
       else
-        "\e[38;2;#{color}m"
+        @fg_truecolor_cache[color] ||= "\e[38;2;#{color}m".freeze
       end
     end
 
     def ansi_bg(color)
       if color.is_a?(Integer)
-        "\e[48;5;#{color}m"
+        BG_256[color]
       else
-        "\e[48;2;#{color}m"
+        @bg_truecolor_cache[color] ||= "\e[48;2;#{color}m".freeze
       end
     end
   end
