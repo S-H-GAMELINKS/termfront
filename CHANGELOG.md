@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-25
+
 ### Changed
 
 - Radar distance culling now compares squared distances against `Config::RADAR_RANGE_SQ` instead of taking a square root per entity per frame
