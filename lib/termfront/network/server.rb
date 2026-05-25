@@ -28,6 +28,7 @@ module Termfront
       }.freeze
       DEFAULT_RATE_LIMIT = 10
       MAX_DROPPED_MSGS = 200
+      MAX_PVP_RANGE = 30.0
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -430,11 +431,12 @@ module Termfront
           oy = other[:y] - attacker[:y]
           dot = ox * dx + oy * dy
           next if dot < 0.1
+          next if dot > MAX_PVP_RANGE
+          next unless dot < best_dot
 
           perp = (ox * (-dy) + oy * dx).abs
           next if perp > weapon.hit_width
           next unless pvp_map.line_of_sight?(attacker[:x], attacker[:y], other[:x], other[:y])
-          next unless dot < best_dot
 
           best = other
           best_dot = dot
