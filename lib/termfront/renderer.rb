@@ -2,10 +2,20 @@
 
 module Termfront
   class Renderer
+    RADAR_CRAWLER  = "\e[91m*\e[0m"
+    RADAR_EXECUTOR = "\e[95m*\e[0m"
+    RADAR_ALLY     = "\e[96m+\e[0m"
+    RADAR_TERMINAL = "\e[96mT\e[0m"
+    RADAR_PLAYER   = "\e[92m^\e[0m"
+    RADAR_WALL     = "\e[90m#\e[0m"
+
     def initialize(stdout)
       @stdout = stdout
       @buf_view_w = 0
       @buf_virt_h = 0
+      @radar_grid_template = build_radar_grid_template
+      @hrule_cache = Hash.new { |h, c| h[c] = ("\xE2\x94\x80" * c)[0, c * 3].freeze }
+      @radar_drop_glyphs = {}
     end
 
     def render(player:, map:, enemies:, projectiles:, drops:, terminals: [], status_line: nil, allies: [])
@@ -131,6 +141,37 @@ module Termfront
 
     private
 
+    def build_radar_grid_template
+      r = Config::RADAR_RADIUS
+      diam = r * 2 + 1
+      Array.new(diam) do |ry|
+        Array.new(diam) do |rx|
+          if ry == r && rx == r
+            "^"
+          else
+            dx = rx - r
+            dy = ry - r
+            d2 = dx * dx + dy * dy
+            if d2 <= r * r
+              "."
+            elsif d2 <= (r + 1) * (r + 1)
+              "#"
+            else
+              " "
+            end
+          end
+        end.freeze
+      end.freeze
+    end
+
+    def radar_drop_glyph(drop)
+      @radar_drop_glyphs[drop.type] ||= begin
+        dc = drop.type.to_s.start_with?("shock") ? "\e[96m" : "\e[93m"
+        dl = Weapon::Base.registry[drop.type].new.name[0]
+        "#{dc}#{dl}\e[0m".freeze
+      end
+    end
+
     def prepare_frame_buffers(view_w, virt_h)
       if @buf_view_w != view_w || @buf_virt_h != virt_h
         @buf_view_w = view_w
@@ -249,25 +290,11 @@ module Termfront
     end
 
     def render_radar(buf, cols, radar_h, player, enemies, drops, terminals, allies = [])
-      buf << ("\xE2\x94\x80" * cols)[0, cols * 3] << "\r\n"
+      buf << @hrule_cache[cols] << "\r\n"
 
       r = Config::RADAR_RADIUS
       diam = r * 2 + 1
-
-      grid = Array.new(diam) { Array.new(diam, " ") }
-      diam.times do |ry|
-        diam.times do |rx|
-          dx = rx - r
-          dy = ry - r
-          d2 = dx * dx + dy * dy
-          if d2 <= r * r
-            grid[ry][rx] = "."
-          elsif d2 <= (r + 1) * (r + 1)
-            grid[ry][rx] = "#"
-          end
-        end
-      end
-      grid[r][r] = "^"
+      grid = @radar_grid_template
 
       cos_a = Math.cos(-player.angle + Math::PI / 2)
       sin_a = Math.sin(-player.angle + Math::PI / 2)
@@ -359,20 +386,17 @@ module Termfront
           line << "  "
           diam.times do |cx|
             if (etype = enemy_cells[[row, cx]])
-              ec = etype == :executor ? "\e[95m" : "\e[91m"
-              line << "#{ec}*\e[0m"
+              line << (etype == :executor ? RADAR_EXECUTOR : RADAR_CRAWLER)
             elsif ally_cells[[row, cx]]
-              line << "\e[96m+\e[0m"
+              line << RADAR_ALLY
             elsif (drop = drop_cells[[row, cx]])
-              dc = drop.type.to_s.start_with?("shock") ? "\e[96m" : "\e[93m"
-              dl = Weapon::Base.registry[drop.type].new.name[0]
-              line << "#{dc}#{dl}\e[0m"
+              line << radar_drop_glyph(drop)
             elsif terminal_cells[[row, cx]]
-              line << "\e[96mT\e[0m"
+              line << RADAR_TERMINAL
             elsif row == r && cx == r
-              line << "\e[92m^\e[0m"
+              line << RADAR_PLAYER
             elsif grid[row][cx] == "#"
-              line << "\e[90m#\e[0m"
+              line << RADAR_WALL
             else
               line << grid[row][cx]
             end
