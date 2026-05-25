@@ -28,6 +28,10 @@ module Termfront
       }.freeze
       DEFAULT_RATE_LIMIT = 10
       MAX_DROPPED_MSGS = 200
+      MAX_PVP_RANGE = 30.0
+      STATE_BROADCAST_HZ = 30
+      STATE_BROADCAST_DT = 1.0 / STATE_BROADCAST_HZ
+      SELECT_TIMEOUT = 1.0 / 60.0
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -271,6 +275,7 @@ module Termfront
         match_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         last_activity = match_start
         last_tick_at = match_start
+        last_state_flush_at = match_start
 
         loop do
           sockets = roster.filter_map do |player|
@@ -281,7 +286,7 @@ module Termfront
           end
           break if sockets.empty?
 
-          readable, = IO.select(sockets, nil, nil, 0.5)
+          readable, = IO.select(sockets, nil, nil, SELECT_TIMEOUT)
 
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           if (reason = match_timeout_reason(now, match_start, last_activity))
@@ -294,6 +299,11 @@ module Termfront
           dt = now - last_tick_at
           roster.each { |player| regen_player(player, dt, now) }
           last_tick_at = now
+
+          if now - last_state_flush_at >= STATE_BROADCAST_DT
+            flush_pending_states(roster)
+            last_state_flush_at = now
+          end
 
           next unless readable
 
@@ -388,7 +398,7 @@ module Termfront
               msg = msg.merge(ff: ff || 0)
             end
             msg = msg.merge(s: player[:shield].round(1), h: player[:health].round(1))
-            broadcast(roster, msg.merge(from: player[:id]), except: player[:id])
+            player[:pending_state] = msg.merge(from: player[:id])
           when "hit"
             route_hit(roster, player, msg, Process.clock_gettime(Process::CLOCK_MONOTONIC))
           when "dead"
@@ -430,11 +440,12 @@ module Termfront
           oy = other[:y] - attacker[:y]
           dot = ox * dx + oy * dy
           next if dot < 0.1
+          next if dot > MAX_PVP_RANGE
+          next unless dot < best_dot
 
           perp = (ox * (-dy) + oy * dx).abs
           next if perp > weapon.hit_width
           next unless pvp_map.line_of_sight?(attacker[:x], attacker[:y], other[:x], other[:y])
-          next unless dot < best_dot
 
           best = other
           best_dot = dot
@@ -450,15 +461,30 @@ module Termfront
       end
 
       def broadcast(roster, msg, except: nil)
+        line = JSON.generate(msg) + "\n"
         roster.each do |player|
           next if player[:id] == except
 
-          send_json(player[:socket], msg)
+          write_line(player[:socket], line)
+        end
+      end
+
+      def flush_pending_states(roster)
+        roster.each do |player|
+          state = player[:pending_state]
+          next unless state
+
+          broadcast(roster, state, except: player[:id])
+          player[:pending_state] = nil
         end
       end
 
       def send_json(socket, msg)
-        socket.write(JSON.generate(msg) + "\n")
+        write_line(socket, JSON.generate(msg) + "\n")
+      end
+
+      def write_line(socket, line)
+        socket.write(line)
       rescue Errno::EPIPE, Errno::ECONNRESET, IOError, OpenSSL::SSL::SSLError
         nil
       end
@@ -919,7 +945,7 @@ module Termfront
 
       def replenish_wavesfight_roster(roster, session)
         roster.each do |player|
-          player[:shield] = [player[:shield] + 35.0, Config::SHIELD_MAX].min
+          player[:shield] = Config::SHIELD_MAX
           player[:health] = [player[:health] + 20.0, Config::HEALTH_MAX].min
           player[:last_damage] = session[:clock] - Config::SHIELD_DELAY
           player[:alive] = true

@@ -392,7 +392,7 @@ module Termfront
 
       def interpolate_opponents(dt)
         @remotes.each_value do |remote|
-          remote[:lerp_t] = [remote[:lerp_t] + dt * 15.0, 1.0].min
+          remote[:lerp_t] = [remote[:lerp_t] + dt * 25.0, 1.0].min
           t = remote[:lerp_t]
           remote[:render].x = remote[:prev].x + (remote[:current].x - remote[:prev].x) * t
           remote[:render].y = remote[:prev].y + (remote[:current].y - remote[:prev].y) * t

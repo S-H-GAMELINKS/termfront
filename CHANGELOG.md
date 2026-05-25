@@ -6,6 +6,31 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-25
+
+### Changed
+
+- Radar distance culling now compares squared distances against `Config::RADAR_RANGE_SQ` instead of taking a square root per entity per frame
+- Renderer reuses the per-column raycast buffers and the virtual pixel grid across frames instead of allocating fresh arrays each tick, only re-allocating when the terminal is resized
+- Build the radar background grid, horizontal rule, and ANSI-styled radar glyphs once and reuse them across frames
+- Look up 256-color SGR escape sequences from a precomputed table and memoize truecolor SGR sequences to avoid rebuilding the same ANSI strings every cell
+- Reuse renderer sprite collection arrays and the radar line buffer across frames, and sort sprites with a comparator block instead of `sort_by`
+- Cache the terminal `winsize` inside the renderer and invalidate the cache from a `SIGWINCH` handler instead of issuing an ioctl every frame
+- PvP hit raycast now culls candidates beyond `MAX_PVP_RANGE` and skips the line-of-sight check when the candidate is already farther than the current best
+- Multiplayer server `broadcast` now serializes each outgoing message once and writes the same JSON line to every recipient
+- PvP server now aggregates outgoing player state on a 30 Hz server tick instead of relaying each incoming state message immediately, reducing TLS write bursts on small VMs
+- PvP match loop `IO.select` timeout shortened from 500 ms to ~16 ms so the new 30 Hz broadcast tick is not delayed by idle reads
+- PvP client opponent interpolation now converges within ~40 ms (lerp factor raised from 15 to 25) so remote players track the new 30 Hz broadcast tick within a single frame
+- Run the title demo, campaign missions, Wavesfight, and PvP at 60 FPS
+
+### Removed
+
+- Stopped emitting DEC 2026 synchronized update escape sequences around each frame and removed the `TERMFRONT_SYNC_UPDATES` environment switch; non-supporting terminals (some SSH paths, older xterm) were paying parsing cost for shapes they ignore, while supporting terminals show no visible regression
+
+### Fixed
+
+- Wavesfight wave advance now fully restores each surviving and revived player's shield to `Config::SHIELD_MAX`; previously only a +35 partial recovery was applied, which left revived players at 35%
+
 ## [0.1.34] - 2026-05-25
 
 ### Fixed

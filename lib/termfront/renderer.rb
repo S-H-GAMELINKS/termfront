@@ -2,12 +2,40 @@
 
 module Termfront
   class Renderer
+    RADAR_CRAWLER  = "\e[91m*\e[0m"
+    RADAR_EXECUTOR = "\e[95m*\e[0m"
+    RADAR_ALLY     = "\e[96m+\e[0m"
+    RADAR_TERMINAL = "\e[96mT\e[0m"
+    RADAR_PLAYER   = "\e[92m^\e[0m"
+    RADAR_WALL     = "\e[90m#\e[0m"
+
+    FG_256 = Array.new(256) { |i| "\e[38;5;#{i}m".freeze }.freeze
+    BG_256 = Array.new(256) { |i| "\e[48;5;#{i}m".freeze }.freeze
+
     def initialize(stdout)
       @stdout = stdout
+      @buf_view_w = 0
+      @buf_virt_h = 0
+      @radar_grid_template = build_radar_grid_template
+      @hrule_cache = Hash.new { |h, c| h[c] = ("\xE2\x94\x80" * c)[0, c * 3].freeze }
+      @radar_drop_glyphs = {}
+      @fg_truecolor_cache = {}
+      @bg_truecolor_cache = {}
+      @enemy_sprites = []
+      @proj_sprites = []
+      @drop_sprites = []
+      @ally_sprites = []
+      @radar_line_buf = +""
+      @size_cache = nil
+      @size_cache_at = -Float::INFINITY
+    end
+
+    def invalidate_size_cache!
+      @size_cache = nil
     end
 
     def render(player:, map:, enemies:, projectiles:, drops:, terminals: [], status_line: nil, allies: [])
-      rows, cols = @stdout.winsize
+      rows, cols = current_size
       rows = [rows, 6].max
       cols = [cols, 20].max
 
@@ -16,38 +44,35 @@ module Termfront
       view_w = cols
       virt_h = view_h * 2
 
+      prepare_frame_buffers(view_w, virt_h)
+
       dx = Math.cos(player.angle)
       dy = Math.sin(player.angle)
       plane_x = -dy * Math.tan(Config::FOV / 2.0)
       plane_y = dx * Math.tan(Config::FOV / 2.0)
 
-      dists = Array.new(view_w)
-      sides = Array.new(view_w)
       view_w.times do |c|
         cam = 2.0 * c / view_w - 1.0
-        dists[c], sides[c] = cast_ray(map, player.x, player.y, dx + plane_x * cam, dy + plane_y * cam)
+        @dists[c], @sides[c] = cast_ray(map, player.x, player.y, dx + plane_x * cam, dy + plane_y * cam)
       end
 
       vmid = virt_h / 2.0
-      wtop = Array.new(view_w)
-      wbot = Array.new(view_w)
-      wcol = Array.new(view_w)
       view_w.times do |c|
-        d = dists[c]
+        d = @dists[c]
         lh = d > 0.01 ? (virt_h / d).to_i : virt_h
-        wtop[c] = [(vmid - lh / 2.0).to_i, 0].max
-        wbot[c] = [(vmid + lh / 2.0).to_i, virt_h].min
-        wcol[c] = Sprite.wall_brightness(d, sides[c])
+        @wtop[c] = [(vmid - lh / 2.0).to_i, 0].max
+        @wbot[c] = [(vmid + lh / 2.0).to_i, virt_h].min
+        @wcol[c] = Sprite.wall_brightness(d, @sides[c])
       end
-      pixels = build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
-      overlay_enemies_3d(pixels, view_h, view_w, dists, player, enemies, projectiles, drops)
-      overlay_allies_3d(pixels, view_h, view_w, dists, player, allies)
-      overlay_damage_flash(pixels, view_h, view_w, player)
+      build_view_pixels(virt_h, view_w, @wtop, @wbot, @wcol)
+      overlay_enemies_3d(@pixels, view_h, view_w, @dists, player, enemies, projectiles, drops)
+      overlay_allies_3d(@pixels, view_h, view_w, @dists, player, allies)
+      overlay_damage_flash(@pixels, view_h, view_w, player)
 
       buf = TerminalOutput.begin_frame(home: true)
 
       render_hud(buf, cols, player, drops, terminals, status_line)
-      render_view(buf, view_h, view_w, pixels)
+      render_view(buf, view_h, view_w, @pixels)
       buf << "\e[#{3 + view_h};1H"
       render_radar(buf, cols, radar_h, player, enemies, drops, terminals, allies)
       render_crosshair(buf, view_h, view_w, cols, player)
@@ -132,6 +157,59 @@ module Termfront
 
     private
 
+    def current_size
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      if @size_cache.nil? || now - @size_cache_at >= 0.25
+        @size_cache = @stdout.winsize
+        @size_cache_at = now
+      end
+      @size_cache
+    end
+
+    def build_radar_grid_template
+      r = Config::RADAR_RADIUS
+      diam = r * 2 + 1
+      Array.new(diam) do |ry|
+        Array.new(diam) do |rx|
+          if ry == r && rx == r
+            "^"
+          else
+            dx = rx - r
+            dy = ry - r
+            d2 = dx * dx + dy * dy
+            if d2 <= r * r
+              "."
+            elsif d2 <= (r + 1) * (r + 1)
+              "#"
+            else
+              " "
+            end
+          end
+        end.freeze
+      end.freeze
+    end
+
+    def radar_drop_glyph(drop)
+      @radar_drop_glyphs[drop.type] ||= begin
+        dc = drop.type.to_s.start_with?("shock") ? "\e[96m" : "\e[93m"
+        dl = Weapon::Base.registry[drop.type].new.name[0]
+        "#{dc}#{dl}\e[0m".freeze
+      end
+    end
+
+    def prepare_frame_buffers(view_w, virt_h)
+      if @buf_view_w != view_w || @buf_virt_h != virt_h
+        @buf_view_w = view_w
+        @buf_virt_h = virt_h
+        @dists = Array.new(view_w)
+        @sides = Array.new(view_w)
+        @wtop  = Array.new(view_w)
+        @wbot  = Array.new(view_w)
+        @wcol  = Array.new(view_w)
+        @pixels = Array.new(virt_h) { Array.new(view_w) }
+      end
+    end
+
     def render_hud(buf, cols, player, drops, terminals, status_line)
       bar_w = [cols - 20, 10].max
       pct = player.shield / Config::SHIELD_MAX.to_f
@@ -180,9 +258,8 @@ module Termfront
     end
 
     def build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
-      pixels = Array.new(virt_h) { Array.new(view_w) }
       virt_h.times do |vr|
-        row = pixels[vr]
+        row = @pixels[vr]
         view_w.times do |c|
           row[c] = if vr < wtop[c]
                      Config::CEIL_C
@@ -193,7 +270,6 @@ module Termfront
                    end
         end
       end
-      pixels
     end
 
     def render_view(buf, view_h, view_w, pixels)
@@ -239,25 +315,11 @@ module Termfront
     end
 
     def render_radar(buf, cols, radar_h, player, enemies, drops, terminals, allies = [])
-      buf << ("\xE2\x94\x80" * cols)[0, cols * 3] << "\r\n"
+      buf << @hrule_cache[cols] << "\r\n"
 
       r = Config::RADAR_RADIUS
       diam = r * 2 + 1
-
-      grid = Array.new(diam) { Array.new(diam, " ") }
-      diam.times do |ry|
-        diam.times do |rx|
-          dx = rx - r
-          dy = ry - r
-          d2 = dx * dx + dy * dy
-          if d2 <= r * r
-            grid[ry][rx] = "."
-          elsif d2 <= (r + 1) * (r + 1)
-            grid[ry][rx] = "#"
-          end
-        end
-      end
-      grid[r][r] = "^"
+      grid = @radar_grid_template
 
       cos_a = Math.cos(-player.angle + Math::PI / 2)
       sin_a = Math.sin(-player.angle + Math::PI / 2)
@@ -267,8 +329,7 @@ module Termfront
 
         ex = e.x - player.x
         ey = e.y - player.y
-        dist = Math.sqrt(ex * ex + ey * ey)
-        next if dist > Config::RADAR_RANGE
+        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
@@ -286,8 +347,7 @@ module Termfront
       drops.each do |d|
         ex = d.x - player.x
         ey = d.y - player.y
-        dist = Math.sqrt(ex * ex + ey * ey)
-        next if dist > Config::RADAR_RANGE
+        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
@@ -305,8 +365,7 @@ module Termfront
       terminals.each do |terminal|
         ex = terminal[:x] - player.x
         ey = terminal[:y] - player.y
-        dist = Math.sqrt(ex * ex + ey * ey)
-        next if dist > Config::RADAR_RANGE
+        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
@@ -324,8 +383,7 @@ module Termfront
       allies.each do |ally|
         ex = ally.x - player.x
         ey = ally.y - player.y
-        dist = Math.sqrt(ex * ex + ey * ey)
-        next if dist > Config::RADAR_RANGE
+        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
@@ -348,25 +406,22 @@ module Termfront
       ]
 
       radar_h.times do |row|
-        line = +""
+        line = @radar_line_buf.clear
         if row < diam
           line << "  "
           diam.times do |cx|
             if (etype = enemy_cells[[row, cx]])
-              ec = etype == :executor ? "\e[95m" : "\e[91m"
-              line << "#{ec}*\e[0m"
+              line << (etype == :executor ? RADAR_EXECUTOR : RADAR_CRAWLER)
             elsif ally_cells[[row, cx]]
-              line << "\e[96m+\e[0m"
+              line << RADAR_ALLY
             elsif (drop = drop_cells[[row, cx]])
-              dc = drop.type.to_s.start_with?("shock") ? "\e[96m" : "\e[93m"
-              dl = Weapon::Base.registry[drop.type].new.name[0]
-              line << "#{dc}#{dl}\e[0m"
+              line << radar_drop_glyph(drop)
             elsif terminal_cells[[row, cx]]
-              line << "\e[96mT\e[0m"
+              line << RADAR_TERMINAL
             elsif row == r && cx == r
-              line << "\e[92m^\e[0m"
+              line << RADAR_PLAYER
             elsif grid[row][cx] == "#"
-              line << "\e[90m#\e[0m"
+              line << RADAR_WALL
             else
               line << grid[row][cx]
             end
@@ -386,7 +441,7 @@ module Termfront
       virt_h = view_h * 2
       inv = 1.0 / (px * dy - py * dx)
 
-      sprites = []
+      @enemy_sprites.clear
       enemies.each do |e|
         next unless e.alive
 
@@ -396,10 +451,10 @@ module Termfront
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
 
-        sprites << [tz, tx, e]
+        @enemy_sprites << [tz, tx, e]
       end
 
-      proj_sprites = []
+      @proj_sprites.clear
       projectiles.each do |p|
         ex = p.x - player.x
         ey = p.y - player.y
@@ -407,12 +462,12 @@ module Termfront
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
 
-        proj_sprites << [tz, tx, p]
+        @proj_sprites << [tz, tx, p]
       end
 
-      sprites.sort_by! { |s| -s[0] }
+      @enemy_sprites.sort! { |a, b| b[0] <=> a[0] }
 
-      sprites.each do |tz, tx, e|
+      @enemy_sprites.each do |tz, tx, e|
         sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
         sprite_h = (virt_h / tz).to_i
         draw_top = [(virt_h / 2 - sprite_h / 2), 0].max
@@ -481,7 +536,7 @@ module Termfront
       end
 
       # Render weapon drops
-      drop_sprites = []
+      @drop_sprites.clear
       drops.each do |d|
         ex = d.x - player.x
         ey = d.y - player.y
@@ -489,11 +544,11 @@ module Termfront
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
 
-        drop_sprites << [tz, tx, d]
+        @drop_sprites << [tz, tx, d]
       end
-      drop_sprites.sort_by! { |s| -s[0] }
+      @drop_sprites.sort! { |a, b| b[0] <=> a[0] }
 
-      drop_sprites.each do |tz, tx, d|
+      @drop_sprites.each do |tz, tx, d|
         sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
         sprite_h = (virt_h / tz * 0.3).to_i.clamp(2, virt_h / 2)
         ground = (virt_h / 2 + virt_h / tz * 0.35).to_i
@@ -527,8 +582,8 @@ module Termfront
       end
 
       # Render projectiles
-      proj_sprites.sort_by! { |s| -s[0] }
-      proj_sprites.each do |tz, tx, p|
+      @proj_sprites.sort! { |a, b| b[0] <=> a[0] }
+      @proj_sprites.each do |tz, tx, p|
         sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
         pw = (4.0 / tz).ceil.clamp(1, 5)
         ph = (virt_h / tz * 0.15).ceil.clamp(2, 6)
@@ -570,7 +625,7 @@ module Termfront
       virt_h = view_h * 2
       inv = 1.0 / (px * dy - py * dx)
 
-      sprites = []
+      @ally_sprites.clear
       allies.each do |ally|
         ex = ally.x - player.x
         ey = ally.y - player.y
@@ -578,11 +633,11 @@ module Termfront
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
 
-        sprites << [tz, tx, ally]
+        @ally_sprites << [tz, tx, ally]
       end
-      sprites.sort_by! { |s| -s[0] }
+      @ally_sprites.sort! { |a, b| b[0] <=> a[0] }
 
-      sprites.each do |tz, tx, ally|
+      @ally_sprites.each do |tz, tx, ally|
         sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
         sprite_h = (virt_h / tz).to_i
         draw_top = [(virt_h / 2 - sprite_h / 2), 0].max
@@ -690,17 +745,17 @@ module Termfront
 
     def ansi_fg(color)
       if color.is_a?(Integer)
-        "\e[38;5;#{color}m"
+        FG_256[color]
       else
-        "\e[38;2;#{color}m"
+        @fg_truecolor_cache[color] ||= "\e[38;2;#{color}m".freeze
       end
     end
 
     def ansi_bg(color)
       if color.is_a?(Integer)
-        "\e[48;5;#{color}m"
+        BG_256[color]
       else
-        "\e[48;2;#{color}m"
+        @bg_truecolor_cache[color] ||= "\e[48;2;#{color}m".freeze
       end
     end
   end

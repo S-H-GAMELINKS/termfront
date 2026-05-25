@@ -10,6 +10,7 @@ module Termfront
       @scene_player = ScenePlayer.new(@stdout, audio: @audio)
       @demo_player = DemoPlayer.new(@stdout, @renderer)
       @difficulty = nil
+      Signal.trap("WINCH") { @renderer.invalidate_size_cache! }
     end
 
     def start
@@ -413,7 +414,7 @@ module Termfront
     end
 
     def replenish_wavesfight_loadout
-      @player.shield = [@player.shield + 35.0, Config::SHIELD_MAX].min
+      @player.shield = Config::SHIELD_MAX
       @player.health = [@player.health + 20.0, Config::HEALTH_MAX].min
       @player.last_damage = -Config::SHIELD_DELAY
       @player.dead = false
