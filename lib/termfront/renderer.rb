@@ -19,6 +19,10 @@ module Termfront
       @radar_grid_template = build_radar_grid_template
       @hrule_cache = Hash.new { |h, c| h[c] = ("\xE2\x94\x80" * c)[0, c * 3].freeze }
       @radar_drop_glyphs = {}
+      @radar_enemy_cells = {}
+      @radar_drop_cells = {}
+      @radar_terminal_cells = {}
+      @radar_ally_cells = {}
       @fg_truecolor_cache = {}
       @bg_truecolor_cache = {}
       @enemy_sprites = []
@@ -28,6 +32,10 @@ module Termfront
       @radar_line_buf = +""
       @size_cache = nil
       @size_cache_at = -Float::INFINITY
+      @cached_hud_shield_key = nil
+      @cached_hud_shield_line = nil
+      @cached_hud_ammo_key = nil
+      @cached_hud_ammo_line = nil
     end
 
     def invalidate_size_cache!
@@ -211,6 +219,14 @@ module Termfront
     end
 
     def render_hud(buf, cols, player, drops, terminals, status_line)
+      buf << hud_shield_line(cols, player, status_line) << "\r\n"
+      buf << hud_ammo_line(cols, player, drops, terminals) << "\r\n"
+    end
+
+    def hud_shield_line(cols, player, status_line)
+      key = [player.shield.to_i, status_line, cols]
+      return @cached_hud_shield_line if @cached_hud_shield_key == key
+
       bar_w = [cols - 20, 10].max
       pct = player.shield / Config::SHIELD_MAX.to_f
       filled = (pct * bar_w).to_i
@@ -226,11 +242,23 @@ module Termfront
       shield_str = "SHIELD #{color}#{"█" * filled}#{"░" * empty}\e[0m #{pct_s}"
       shield_str = "#{shield_str}\e[90m#{status_line}\e[0m" if status_line
       pad = [(cols - bar_w - 15) / 2, 0].max
-      buf << TerminalOutput.fit_ansi("#{" " * pad}#{shield_str}", cols) << "\r\n"
+      line = TerminalOutput.fit_ansi("#{" " * pad}#{shield_str}", cols)
 
+      @cached_hud_shield_key = key
+      @cached_hud_shield_line = line
+      line
+    end
+
+    def hud_ammo_line(cols, player, drops, terminals)
       weapon = player.current_weapon
-      wcolor = weapon.type_id.to_s.start_with?("shock") ? "\e[96m" : "\e[97m"
+      can_pickup = drops.any? { |d| d.in_range?(player.x, player.y) }
+      can_use_terminal = terminals.any? do |terminal|
+        (terminal[:x] - player.x)**2 + (terminal[:y] - player.y)**2 < Config::TERMINAL_USE_RADIUS**2
+      end
+      key = [weapon.type_id, weapon.ammo, can_pickup, can_use_terminal, cols]
+      return @cached_hud_ammo_line if @cached_hud_ammo_key == key
 
+      wcolor = weapon.type_id.to_s.start_with?("shock") ? "\e[96m" : "\e[97m"
       if weapon.max_ammo
         ammo_bar_w = 12
         ammo_pct = weapon.ammo.to_f / weapon.max_ammo
@@ -241,10 +269,6 @@ module Termfront
         ammo_str = "#{wcolor}#{weapon.name}\e[0m [\xe2\x88\x9e]"
       end
 
-      can_pickup = drops.any? { |d| d.in_range?(player.x, player.y) }
-      can_use_terminal = terminals.any? do |terminal|
-        (terminal[:x] - player.x)**2 + (terminal[:y] - player.y)**2 < Config::TERMINAL_USE_RADIUS**2
-      end
       interact_str = if can_use_terminal
                        "\e[1;96m[E]Use Terminal\e[0m"
                      elsif can_pickup
@@ -253,26 +277,48 @@ module Termfront
                        "E:interact"
                      end
 
-      line = "#{ammo_str}  T:swap  #{interact_str}  Space:fire"
-      buf << TerminalOutput.fit_ansi(line, cols) << "\r\n"
+      line = TerminalOutput.fit_ansi("#{ammo_str}  T:swap  #{interact_str}  Space:fire", cols)
+
+      @cached_hud_ammo_key = key
+      @cached_hud_ammo_line = line
+      line
     end
 
     def build_view_pixels(virt_h, view_w, wtop, wbot, wcol)
-      virt_h.times do |vr|
-        row = @pixels[vr]
-        view_w.times do |c|
-          row[c] = if vr < wtop[c]
-                     Config::CEIL_C
-                   elsif vr < wbot[c]
-                     wcol[c]
-                   else
-                     Config::FLOOR_C
-                   end
+      ceil_c = Config::CEIL_C
+      floor_c = Config::FLOOR_C
+      pixels = @pixels
+
+      c = 0
+      while c < view_w
+        wt = wtop[c]
+        wb = wbot[c]
+        wc = wcol[c]
+
+        vr = 0
+        while vr < wt && vr < virt_h
+          pixels[vr][c] = ceil_c
+          vr += 1
         end
+        while vr < wb && vr < virt_h
+          pixels[vr][c] = wc
+          vr += 1
+        end
+        while vr < virt_h
+          pixels[vr][c] = floor_c
+          vr += 1
+        end
+
+        c += 1
       end
     end
 
     def render_view(buf, view_h, view_w, pixels)
+      fg_256 = FG_256
+      bg_256 = BG_256
+      fg_cache = @fg_truecolor_cache
+      bg_cache = @bg_truecolor_cache
+
       view_h.times do |r|
         vp0 = r * 2
         vp1 = r * 2 + 1
@@ -286,16 +332,16 @@ module Termfront
           bc = bot_row[c]
 
           if tc == bc
-            if bg_only?(tc)
+            if tc.is_a?(Integer)
               if tc != pbg
-                buf << ansi_bg(tc)
+                buf << bg_256[tc]
                 pbg = tc
                 pfg = nil
               end
               buf << " "
             else
               if tc != pfg || pbg
-                buf << ansi_fg(tc)
+                buf << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
                 pfg = tc
                 pbg = nil
               end
@@ -303,7 +349,9 @@ module Termfront
             end
           else
             if tc != pfg || bc != pbg
-              buf << ansi_fg(tc) << ansi_bg(bc)
+              fg = tc.is_a?(Integer) ? fg_256[tc] : (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
+              bg = bc.is_a?(Integer) ? bg_256[bc] : (bg_cache[bc] ||= "\e[48;2;#{bc}m".freeze)
+              buf << fg << bg
               pfg = tc
               pbg = bc
             end
@@ -319,82 +367,97 @@ module Termfront
 
       r = Config::RADAR_RADIUS
       diam = r * 2 + 1
+      range = Config::RADAR_RANGE
+      range_sq = Config::RADAR_RANGE_SQ
+      r_sq = r * r
       grid = @radar_grid_template
 
       cos_a = Math.cos(-player.angle + Math::PI / 2)
       sin_a = Math.sin(-player.angle + Math::PI / 2)
-      enemy_cells = {}
+      px = player.x
+      py = player.y
+
+      enemy_cells = @radar_enemy_cells
+      drop_cells = @radar_drop_cells
+      terminal_cells = @radar_terminal_cells
+      ally_cells = @radar_ally_cells
+      enemy_cells.clear
+      drop_cells.clear
+      terminal_cells.clear
+      ally_cells.clear
+
       enemies.each do |e|
         next unless e.alive
 
-        ex = e.x - player.x
-        ey = e.y - player.y
-        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
+        ex = e.x - px
+        ey = e.y - py
+        next if ex * ex + ey * ey > range_sq
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
-        sx = r + (rx / Config::RADAR_RANGE * r).round
-        sy = r + (ry / Config::RADAR_RANGE * r).round
-        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+        sx = r + (rx / range * r).round
+        sy = r + (ry / range * r).round
+        next if sx < 0 || sx >= diam || sy < 0 || sy >= diam
 
-        d2 = (sx - r)**2 + (sy - r)**2
-        next if d2 > r * r
+        dxr = sx - r
+        dyr = sy - r
+        next if dxr * dxr + dyr * dyr > r_sq
 
-        enemy_cells[[sy, sx]] = e.sprite_id
+        enemy_cells[sy * diam + sx] = e.sprite_id
       end
 
-      drop_cells = {}
       drops.each do |d|
-        ex = d.x - player.x
-        ey = d.y - player.y
-        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
+        ex = d.x - px
+        ey = d.y - py
+        next if ex * ex + ey * ey > range_sq
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
-        sx = r + (rx / Config::RADAR_RANGE * r).round
-        sy = r + (ry / Config::RADAR_RANGE * r).round
-        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+        sx = r + (rx / range * r).round
+        sy = r + (ry / range * r).round
+        next if sx < 0 || sx >= diam || sy < 0 || sy >= diam
 
-        d2 = (sx - r)**2 + (sy - r)**2
-        next if d2 > r * r
+        dxr = sx - r
+        dyr = sy - r
+        next if dxr * dxr + dyr * dyr > r_sq
 
-        drop_cells[[sy, sx]] = d
+        drop_cells[sy * diam + sx] = d
       end
 
-      terminal_cells = {}
       terminals.each do |terminal|
-        ex = terminal[:x] - player.x
-        ey = terminal[:y] - player.y
-        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
+        ex = terminal[:x] - px
+        ey = terminal[:y] - py
+        next if ex * ex + ey * ey > range_sq
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
-        sx = r + (rx / Config::RADAR_RANGE * r).round
-        sy = r + (ry / Config::RADAR_RANGE * r).round
-        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+        sx = r + (rx / range * r).round
+        sy = r + (ry / range * r).round
+        next if sx < 0 || sx >= diam || sy < 0 || sy >= diam
 
-        d2 = (sx - r)**2 + (sy - r)**2
-        next if d2 > r * r
+        dxr = sx - r
+        dyr = sy - r
+        next if dxr * dxr + dyr * dyr > r_sq
 
-        terminal_cells[[sy, sx]] = terminal
+        terminal_cells[sy * diam + sx] = terminal
       end
 
-      ally_cells = {}
       allies.each do |ally|
-        ex = ally.x - player.x
-        ey = ally.y - player.y
-        next if ex * ex + ey * ey > Config::RADAR_RANGE_SQ
+        ex = ally.x - px
+        ey = ally.y - py
+        next if ex * ex + ey * ey > range_sq
 
         rx = -(ex * cos_a - ey * sin_a)
         ry = -(ex * sin_a + ey * cos_a)
-        sx = r + (rx / Config::RADAR_RANGE * r).round
-        sy = r + (ry / Config::RADAR_RANGE * r).round
-        next unless sx.between?(0, diam - 1) && sy.between?(0, diam - 1)
+        sx = r + (rx / range * r).round
+        sy = r + (ry / range * r).round
+        next if sx < 0 || sx >= diam || sy < 0 || sy >= diam
 
-        d2 = (sx - r)**2 + (sy - r)**2
-        next if d2 > r * r
+        dxr = sx - r
+        dyr = sy - r
+        next if dxr * dxr + dyr * dyr > r_sq
 
-        ally_cells[[sy, sx]] = true
+        ally_cells[sy * diam + sx] = true
       end
 
       alive_count = enemies.count(&:alive)
@@ -402,21 +465,25 @@ module Termfront
       info_lines = [
         "Enemies: #{alive_count}/#{total_count}",
         "Heading: #{format("%.0f", (player.angle % (Math::PI * 2)) * 180 / Math::PI)}\xC2\xB0",
-        "Pos: (#{"%.1f" % player.x}, #{"%.1f" % player.y})  T:terminal"
+        "Pos: (#{"%.1f" % px}, #{"%.1f" % py})  T:terminal"
       ]
 
-      radar_h.times do |row|
+      row = 0
+      while row < radar_h
         line = @radar_line_buf.clear
         if row < diam
           line << "  "
-          diam.times do |cx|
-            if (etype = enemy_cells[[row, cx]])
+          cx = 0
+          base = row * diam
+          while cx < diam
+            key = base + cx
+            if (etype = enemy_cells[key])
               line << (etype == :executor ? RADAR_EXECUTOR : RADAR_CRAWLER)
-            elsif ally_cells[[row, cx]]
+            elsif ally_cells[key]
               line << RADAR_ALLY
-            elsif (drop = drop_cells[[row, cx]])
+            elsif (drop = drop_cells[key])
               line << radar_drop_glyph(drop)
-            elsif terminal_cells[[row, cx]]
+            elsif terminal_cells[key]
               line << RADAR_TERMINAL
             elsif row == r && cx == r
               line << RADAR_PLAYER
@@ -425,28 +492,36 @@ module Termfront
             else
               line << grid[row][cx]
             end
+            cx += 1
           end
           line << (row < info_lines.size ? "    #{info_lines[row]}" : "")
         end
         buf << TerminalOutput.fit_ansi(line, cols)
         buf << "\r\n" if row < radar_h - 1
+        row += 1
       end
     end
 
     def overlay_enemies_3d(pixels, view_h, view_w, dists, player, enemies, projectiles, drops)
       dx = Math.cos(player.angle)
       dy = Math.sin(player.angle)
-      px = -dy * Math.tan(Config::FOV / 2.0)
-      py = dx * Math.tan(Config::FOV / 2.0)
+      tan_half_fov = Math.tan(Config::FOV / 2.0)
+      px = -dy * tan_half_fov
+      py = dx * tan_half_fov
       virt_h = view_h * 2
+      half_virt_h = virt_h / 2
+      half_view_w = view_w / 2.0
+      view_w_last = view_w - 1
       inv = 1.0 / (px * dy - py * dx)
+      player_x = player.x
+      player_y = player.y
 
       @enemy_sprites.clear
       enemies.each do |e|
         next unless e.alive
 
-        ex = e.x - player.x
-        ey = e.y - player.y
+        ex = e.x - player_x
+        ey = e.y - player_y
         tx = inv * (dy * ex - dx * ey)
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
@@ -456,8 +531,8 @@ module Termfront
 
       @proj_sprites.clear
       projectiles.each do |p|
-        ex = p.x - player.x
-        ey = p.y - player.y
+        ex = p.x - player_x
+        ey = p.y - player_y
         tx = inv * (dy * ex - dx * ey)
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
@@ -468,78 +543,94 @@ module Termfront
       @enemy_sprites.sort! { |a, b| b[0] <=> a[0] }
 
       @enemy_sprites.each do |tz, tx, e|
-        sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
+        sx = (half_view_w * (1 + tx / tz)).to_i
         sprite_h = (virt_h / tz).to_i
-        draw_top = [(virt_h / 2 - sprite_h / 2), 0].max
-        draw_bot = [(virt_h / 2 + sprite_h / 2), virt_h].min
-        sprite_w = (sprite_h / 2.0).to_i
-        start_x = [sx - sprite_w / 2, 0].max
-        end_x   = [sx + sprite_w / 2, view_w - 1].min
+        draw_top = half_virt_h - sprite_h / 2
+        draw_top = 0 if draw_top < 0
+        draw_bot = half_virt_h + sprite_h / 2
+        draw_bot = virt_h if draw_bot > virt_h
+        sprite_w = sprite_h / 2
+        start_x = sx - sprite_w / 2
+        start_x = 0 if start_x < 0
+        end_x = sx + sprite_w / 2
+        end_x = view_w_last if end_x > view_w_last
 
         actual_h = draw_bot - draw_top
         actual_w = end_x - start_x + 1
         next if actual_h < 1 || actual_w < 1
 
-        fallback_color = e.sprite_id == :executor ? "100;60;200" : "220;140;30"
+        sprite_id = e.sprite_id
+        fallback_color = sprite_id == :executor ? "100;60;200" : "220;140;30"
         use_shape = actual_h >= 6
+        r_top = (draw_top + 1) >> 1
+        r_bot = draw_bot >> 1
+        actual_h_f = actual_h.to_f
+        actual_w_f = actual_w.to_f
 
-        start_x.upto(end_x) do |c|
-          next if c < 0 || c >= view_w
-          next if dists[c] < tz
+        c = start_x
+        while c <= end_x
+          if c >= 0 && c < view_w && dists[c] >= tz
+            nx = (c - start_x) / actual_w_f
 
-          nx = (c - start_x).to_f / actual_w
+            r = r_top
+            while r < r_bot
+              vp0 = r << 1
+              vp1 = vp0 + 1
+              top_in = vp0 >= draw_top && vp0 < draw_bot
+              bot_in = vp1 >= draw_top && vp1 < draw_bot
 
-          r_top = (draw_top / 2.0).ceil
-          r_bot = (draw_bot / 2.0).floor
-          r_top.upto(r_bot - 1) do |r|
-            vp0 = r * 2
-            vp1 = r * 2 + 1
-            top_in = vp0 >= draw_top && vp0 < draw_bot
-            bot_in = vp1 >= draw_top && vp1 < draw_bot
-            next unless top_in || bot_in
-
-            if use_shape
-              ny0 = top_in ? (vp0 - draw_top).to_f / actual_h : nil
-              ny1 = bot_in ? (vp1 - draw_top).to_f / actual_h : nil
-              top_color = ny0 ? Sprite.for(e.sprite_id, nx, ny0) : nil
-              bot_color = ny1 ? Sprite.for(e.sprite_id, nx, ny1) : nil
-              next unless top_color || bot_color
-
-              pixels[vp0][c] = top_color if top_color
-              pixels[vp1][c] = bot_color if bot_color
-            else
-              pixels[vp0][c] = fallback_color if top_in
-              pixels[vp1][c] = fallback_color if bot_in
+              if top_in || bot_in
+                if use_shape
+                  ny0 = top_in ? (vp0 - draw_top) / actual_h_f : nil
+                  ny1 = bot_in ? (vp1 - draw_top) / actual_h_f : nil
+                  top_color = ny0 ? Sprite.for(sprite_id, nx, ny0) : nil
+                  bot_color = ny1 ? Sprite.for(sprite_id, nx, ny1) : nil
+                  if top_color || bot_color
+                    pixels[vp0][c] = top_color if top_color
+                    pixels[vp1][c] = bot_color if bot_color
+                  end
+                else
+                  pixels[vp0][c] = fallback_color if top_in
+                  pixels[vp1][c] = fallback_color if bot_in
+                end
+              end
+              r += 1
             end
           end
+          c += 1
         end
 
         next unless e.max_hp > 1
 
-        bar_row = (draw_top / 2.0).ceil - 1
+        bar_row = r_top - 1
         next unless bar_row >= 0 && bar_row < view_h
 
-        bar_w = [actual_w, 2].max
-        bar_sx = [sx - bar_w / 2, 0].max
-        bar_ex = [bar_sx + bar_w - 1, view_w - 1].min
+        bar_w = actual_w > 2 ? actual_w : 2
+        bar_sx = sx - bar_w / 2
+        bar_sx = 0 if bar_sx < 0
+        bar_ex = bar_sx + bar_w - 1
+        bar_ex = view_w_last if bar_ex > view_w_last
         hp_pct = e.hp.to_f / e.max_hp
         filled = (hp_pct * (bar_ex - bar_sx + 1)).ceil
-        bar_sx.upto(bar_ex) do |c|
-          next if c < 0 || c >= view_w
-          next if dists[c] < tz
-
-          ci = c - bar_sx
-          color = ci < filled ? "0;200;0" : "200;0;0"
-          pixels[bar_row * 2][c] = color
-          pixels[bar_row * 2 + 1][c] = color
+        bar_vp0 = bar_row << 1
+        bar_vp1 = bar_vp0 + 1
+        c = bar_sx
+        while c <= bar_ex
+          if c >= 0 && c < view_w && dists[c] >= tz
+            ci = c - bar_sx
+            color = ci < filled ? "0;200;0" : "200;0;0"
+            pixels[bar_vp0][c] = color
+            pixels[bar_vp1][c] = color
+          end
+          c += 1
         end
       end
 
       # Render weapon drops
       @drop_sprites.clear
       drops.each do |d|
-        ex = d.x - player.x
-        ey = d.y - player.y
+        ex = d.x - player_x
+        ey = d.y - player_y
         tx = inv * (dy * ex - dx * ey)
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
@@ -549,70 +640,83 @@ module Termfront
       @drop_sprites.sort! { |a, b| b[0] <=> a[0] }
 
       @drop_sprites.each do |tz, tx, d|
-        sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
-        sprite_h = (virt_h / tz * 0.3).to_i.clamp(2, virt_h / 2)
-        ground = (virt_h / 2 + virt_h / tz * 0.35).to_i
-        draw_bot = [ground, virt_h].min
-        draw_top = [draw_bot - sprite_h, 0].max
-        sprite_w = (sprite_h / 2.0).to_i.clamp(1, 6)
-        start_x = [sx - sprite_w / 2, 0].max
-        end_x   = [sx + sprite_w / 2, view_w - 1].min
+        sx = (half_view_w * (1 + tx / tz)).to_i
+        sprite_h = (virt_h / tz * 0.3).to_i.clamp(2, half_virt_h)
+        ground = (half_virt_h + virt_h / tz * 0.35).to_i
+        draw_bot = ground < virt_h ? ground : virt_h
+        draw_top = draw_bot - sprite_h
+        draw_top = 0 if draw_top < 0
+        sprite_w = (sprite_h / 2).clamp(1, 6)
+        start_x = sx - sprite_w / 2
+        start_x = 0 if start_x < 0
+        end_x = sx + sprite_w / 2
+        end_x = view_w_last if end_x > view_w_last
 
         color = d.sprite_color
+        r_top = (draw_top + 1) >> 1
+        r_bot = draw_bot >> 1
 
-        start_x.upto(end_x) do |c|
-          next if c < 0 || c >= view_w
-          next if dists[c] < tz
-
-          r_top = (draw_top / 2.0).ceil
-          r_bot = (draw_bot / 2.0).floor
-          r_top.upto(r_bot - 1) do |r|
-            next if r < 0 || r >= view_h
-
-            vp0 = r * 2
-            vp1 = r * 2 + 1
-            top_in = vp0 >= draw_top && vp0 < draw_bot
-            bot_in = vp1 >= draw_top && vp1 < draw_bot
-            next unless top_in || bot_in
-
-            pixels[vp0][c] = color if top_in
-            pixels[vp1][c] = color if bot_in
+        c = start_x
+        while c <= end_x
+          if c >= 0 && c < view_w && dists[c] >= tz
+            r = r_top
+            while r < r_bot
+              if r >= 0 && r < view_h
+                vp0 = r << 1
+                vp1 = vp0 + 1
+                top_in = vp0 >= draw_top && vp0 < draw_bot
+                bot_in = vp1 >= draw_top && vp1 < draw_bot
+                if top_in || bot_in
+                  pixels[vp0][c] = color if top_in
+                  pixels[vp1][c] = color if bot_in
+                end
+              end
+              r += 1
+            end
           end
+          c += 1
         end
       end
 
       # Render projectiles
       @proj_sprites.sort! { |a, b| b[0] <=> a[0] }
       @proj_sprites.each do |tz, tx, p|
-        sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
+        sx = (half_view_w * (1 + tx / tz)).to_i
         pw = (4.0 / tz).ceil.clamp(1, 5)
         ph = (virt_h / tz * 0.15).ceil.clamp(2, 6)
-        vmid = virt_h / 2
-        draw_top = [(vmid - ph / 2), 0].max
-        draw_bot = [(vmid + ph / 2).clamp(draw_top + 2, virt_h), virt_h].min
-        start_x = [sx - pw / 2, 0].max
-        end_x   = [sx + pw / 2, view_w - 1].min
-        col_code = p.type == :executor ? "94" : "93"
+        draw_top = half_virt_h - ph / 2
+        draw_top = 0 if draw_top < 0
+        draw_bot = half_virt_h + ph / 2
+        draw_bot = draw_top + 2 if draw_bot < draw_top + 2
+        draw_bot = virt_h if draw_bot > virt_h
+        start_x = sx - pw / 2
+        start_x = 0 if start_x < 0
+        end_x = sx + pw / 2
+        end_x = view_w_last if end_x > view_w_last
+        proj_color = p.type == :executor ? "94;94;255" : "255;210;80"
+        r_top = (draw_top + 1) >> 1
+        r_bot = draw_bot >> 1
+        r_bot = r_top + 1 if r_bot < r_top + 1
 
-        start_x.upto(end_x) do |c|
-          next if c < 0 || c >= view_w
-          next if dists[c] < tz
-
-          r_top = (draw_top / 2.0).ceil
-          r_bot = [(draw_bot / 2.0).floor, r_top + 1].max
-          r_top.upto(r_bot - 1) do |r|
-            next if r < 0 || r >= view_h
-
-            vp0 = r * 2
-            vp1 = r * 2 + 1
-            top_in = vp0 >= draw_top && vp0 < draw_bot
-            bot_in = vp1 >= draw_top && vp1 < draw_bot
-            next unless top_in || bot_in
-
-            proj_color = col_code == "94" ? "94;94;255" : "255;210;80"
-            pixels[vp0][c] = proj_color if top_in
-            pixels[vp1][c] = proj_color if bot_in
+        c = start_x
+        while c <= end_x
+          if c >= 0 && c < view_w && dists[c] >= tz
+            r = r_top
+            while r < r_bot
+              if r >= 0 && r < view_h
+                vp0 = r << 1
+                vp1 = vp0 + 1
+                top_in = vp0 >= draw_top && vp0 < draw_bot
+                bot_in = vp1 >= draw_top && vp1 < draw_bot
+                if top_in || bot_in
+                  pixels[vp0][c] = proj_color if top_in
+                  pixels[vp1][c] = proj_color if bot_in
+                end
+              end
+              r += 1
+            end
           end
+          c += 1
         end
       end
     end

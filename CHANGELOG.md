@@ -6,6 +6,24 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-05-26
+
+### Changed
+
+- Memoize the HUD shield and ammo lines so `fit_ansi` only re-runs when the shown shield value, weapon, ammo, pickup hint, or terminal width actually change
+- Inline the color-mode branching and SGR lookups into `Renderer#render_view` to remove per-cell `bg_only?`, `ansi_fg`, and `ansi_bg` method calls (about 72,000 calls per second at 30 Hz on an 80-wide terminal)
+- Enable YJIT on startup so the hot Ruby methods in the renderer (`build_view_pixels`, `render_view`, `cast_ray`, etc.) get JIT-compiled instead of interpreted
+- Rewrite `TerminalOutput.fit_ansi` to walk the input by byte index with `getbyte` and `byteslice` instead of scanning with a regular expression, removing the per-line `Regexp#match` / `MatchData` allocations that dominated the renderer's CPU profile under YJIT
+- Render the title screen at 30 Hz while still advancing its spin animation and polling input at 60 Hz, so the per-frame renderer cost halves without making the demo motion feel choppy
+- Cache the demo mission instance, its tile-map, and its enemy definitions inside `TitleScreen#initialize` instead of rebuilding them every frame
+- Render singleplayer and Wavesfight at 30 Hz while still running the update step, physics, and input polling at 60 Hz, halving the in-game renderer cost without slowing the simulation or input response
+- Rewrite `Renderer#build_view_pixels` with column-major `while` loops that read `wtop`/`wbot`/`wcol` once per column and fill the ceiling / wall / floor segments without per-cell branching, hoisting `Config::CEIL_C` / `Config::FLOOR_C` and `@pixels` as locals so YJIT keeps the hot loop tight
+- Memoize the title screen's static lines (logo, subtitle, and the five menu entries) per terminal width so `fit_ansi` runs once instead of seven times per title-screen frame
+- Memoize every line of `Game#render_mission_select` keyed by terminal width, current selection, difficulty, and mission class, so the nine `fit_ansi` calls per frame collapse to cache lookups while the cursor is idle
+- Reuse the radar's enemy / drop / terminal / ally cell hashes between frames and key them by integer (`sy * diam + sx`) to drop per-cell `Array` allocations, hoisting `Config::RADAR_RANGE`, `RADAR_RANGE_SQ`, `r*r`, and the player position as locals so YJIT keeps the radar projection loops tight
+- Tighten the enemy half of `Renderer#overlay_enemies_3d`: hoist the FOV tangent, player position, and half-frame constants as locals, replace the `upto` loops with `while`, use integer shift instead of `to_f` / `.ceil` / `.floor` for half-block row indexing, and cache the float versions of `actual_h` / `actual_w` so the per-cell sprite division loop stops allocating new floats every iteration
+- Apply the same `while`-loop and integer-math pattern to the drop and projectile branches of `Renderer#overlay_enemies_3d`, reusing the hoisted player position and half-frame constants and computing the projectile color directly instead of through an intermediate ANSI code string
+
 ## [0.1.5] - 2026-05-25
 
 ### Changed

@@ -7,12 +7,30 @@ module Termfront
       [13.0, 8.0], [10.0, 8.5], [5.0, 8.5], [2.5, 5.0]
     ].freeze
 
+    TITLE_TEXT = "T E R M F R O N T"
+    SUB_TEXT = "Terminal FPS"
+    MENU_ITEMS = ["[P] PvP", "[F] Wavesfight", "[C] Campaign", "[S] Training", "[Q] Quit"].freeze
+
     def initialize(stdout)
       @stdout = stdout
       @title_spin = 0.0
       @demo_wp_idx = 0
       @demo_wp_t = 0.0
       @demo_fire = 0
+
+      mission_class = Mission::Base.campaign.first
+      if mission_class
+        m = mission_class.new
+        @demo_map = m.map_data.map { |row| row.is_a?(Array) ? row : row.chars }.freeze
+        @demo_map_h = @demo_map.size
+        @demo_map_w = @demo_map[0].size
+        @demo_enemies = m.enemy_defs.freeze
+      end
+
+      @static_lines_cols = 0
+      @static_title_line = nil
+      @static_sub_line = nil
+      @static_menu_lines = nil
     end
 
     def show
@@ -24,11 +42,15 @@ module Termfront
       TerminalOutput.write_all(@stdout, TerminalOutput.begin_frame(home: true, clear: true) + TerminalOutput.end_frame)
 
       STDIN.raw do |stdin|
+        last_render = clock - Config::RENDER_DT
         loop do
           now = clock
           @title_spin += 0.015
 
-          render
+          if now - last_render >= Config::RENDER_DT
+            render
+            last_render = now
+          end
 
           while IO.select([stdin], nil, nil, 0)
             begin
@@ -60,6 +82,20 @@ module Termfront
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
+    def ensure_static_lines(cols)
+      return if @static_lines_cols == cols
+
+      tc = [(cols - TITLE_TEXT.size) / 2 + 1, 1].max
+      sc = [(cols - SUB_TEXT.size) / 2 + 1, 1].max
+      @static_title_line = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{TITLE_TEXT}\e[0m", cols)
+      @static_sub_line = TerminalOutput.fit_ansi("#{" " * (sc - 1)}\e[38;2;80;80;120m#{SUB_TEXT}\e[0m", cols)
+      @static_menu_lines = MENU_ITEMS.map do |item|
+        ic = [(cols - item.size) / 2 + 1, 1].max
+        TerminalOutput.fit_ansi("#{" " * (ic - 1)}\e[97m#{item}\e[0m", cols)
+      end
+      @static_lines_cols = cols
+    end
+
     def render
       rows, cols = @stdout.winsize
       rows = [rows, 10].max
@@ -76,13 +112,11 @@ module Termfront
       virt_h = th * 2
       color = Array.new(tw * virt_h, nil)
 
-      mission = Mission::Base.campaign.first
-      return unless mission
+      return unless @demo_map
 
-      m = mission.new
-      demo_map = m.map_data.map { |r| r.is_a?(Array) ? r : r.chars }
-      dm_h = demo_map.size
-      dm_w = demo_map[0].size
+      demo_map = @demo_map
+      dm_h = @demo_map_h
+      dm_w = @demo_map_w
 
       @demo_wp_t += Config::DEMO_SPEED
       if @demo_wp_t >= 1.0
@@ -184,7 +218,7 @@ module Termfront
       end
 
       # Demo enemies
-      demo_enemies = m.enemy_defs
+      demo_enemies = @demo_enemies
       ddx = Math.cos(cam_a)
       ddy = Math.sin(cam_a)
       ppx = -ddy * Math.tan(fov / 2.0)
@@ -269,22 +303,16 @@ module Termfront
         lines[r] = TerminalOutput.fit_ansi(line, cols)
       end
 
-      # Title text
-      title_row = [[th + 1, rows - 4].min, 1].max
-      title = "T E R M F R O N T"
-      sub   = "Terminal FPS"
-      tc = [(cols - title.size) / 2 + 1, 1].max
-      sc = [(cols - sub.size) / 2 + 1, 1].max
-      lines[title_row - 1] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{title}\e[0m", cols)
-      lines[title_row] = TerminalOutput.fit_ansi("#{" " * (sc - 1)}\e[38;2;80;80;120m#{sub}\e[0m", cols)
+      # Title text + menu items (memoized per cols)
+      ensure_static_lines(cols)
 
-      # Menu items
-      items = ["[P] PvP", "[F] Wavesfight", "[C] Campaign", "[S] Training", "[Q] Quit"]
-      items_count_for_menu = items.size
-      menu_row = [[title_row + 2, rows - items_count_for_menu].min, 1].max
-      items.each_with_index do |item, i|
-        ic = [(cols - item.size) / 2 + 1, 1].max
-        lines[menu_row + i - 1] = TerminalOutput.fit_ansi("#{" " * (ic - 1)}\e[97m#{item}\e[0m", cols)
+      title_row = [[th + 1, rows - 4].min, 1].max
+      lines[title_row - 1] = @static_title_line
+      lines[title_row] = @static_sub_line
+
+      menu_row = [[title_row + 2, rows - MENU_ITEMS.size].min, 1].max
+      @static_menu_lines.each_with_index do |menu_line, i|
+        lines[menu_row + i - 1] = menu_line
       end
 
       lines.each_with_index do |line, index|

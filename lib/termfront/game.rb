@@ -131,6 +131,7 @@ module Termfront
     def run_game_loop(show_complete_banner: true)
       STDIN.raw do |stdin|
         last_time = clock
+        last_render = last_time - Config::RENDER_DT
 
         loop do
           now = clock
@@ -146,11 +147,14 @@ module Termfront
           end
 
           update(dt)
-          @renderer.render(
-            player: @player, map: @map,
-            enemies: @enemies, projectiles: @projectiles,
-            drops: @player.drops, terminals: @terminals
-          )
+          if now - last_render >= Config::RENDER_DT
+            @renderer.render(
+              player: @player, map: @map,
+              enemies: @enemies, projectiles: @projectiles,
+              drops: @player.drops, terminals: @terminals
+            )
+            last_render = now
+          end
 
           if @player.dead
             rows, cols = @stdout.winsize
@@ -176,6 +180,7 @@ module Termfront
     def run_wavesfight_loop
       STDIN.raw do |stdin|
         last_time = clock
+        last_render = last_time - Config::RENDER_DT
 
         loop do
           now = clock
@@ -191,12 +196,15 @@ module Termfront
           end
 
           update(dt)
-          @renderer.render(
-            player: @player, map: @map,
-            enemies: @enemies, projectiles: @projectiles,
-            drops: @player.drops, terminals: @terminals,
-            status_line: "  WAVE #{@wave}  #{Enemy::Base::DIFFICULTIES[@difficulty][:name]}"
-          )
+          if now - last_render >= Config::RENDER_DT
+            @renderer.render(
+              player: @player, map: @map,
+              enemies: @enemies, projectiles: @projectiles,
+              drops: @player.drops, terminals: @terminals,
+              status_line: "  WAVE #{@wave}  #{Enemy::Base::DIFFICULTIES[@difficulty][:name]}"
+            )
+            last_render = now
+          end
 
           if @player.dead
             rows, cols = @stdout.winsize
@@ -209,6 +217,7 @@ module Termfront
             show_wave_clear
             start_wavesfight_wave
             last_time = clock
+            last_render = clock - Config::RENDER_DT
           end
 
           cap_frame(now)
@@ -543,62 +552,78 @@ module Termfront
       end
     end
 
+    MISSION_SELECT_DIFF_COLORS = ["\e[92m", "\e[93m", "\e[38;2;255;165;0m", "\e[91m"].freeze
+    MISSION_SELECT_CTRL = "Up/Down: Select   Left/Right: Difficulty   Enter/1-5: Start   Q: Back"
+
     def render_mission_select(selected, missions, title)
       rows, cols = @stdout.winsize
       buf = TerminalOutput.begin_frame(home: true)
       lines = Array.new(rows) { " " * cols }
+      cache = (@mission_select_cache ||= {})
 
-      tc = [(cols - title.size) / 2 + 1, 1].max
-      lines[1] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{title}\e[0m", cols)
+      lines[1] = cache[[:title, cols, title]] ||= begin
+        tc = [(cols - title.size) / 2 + 1, 1].max
+        TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{title}\e[0m", cols)
+      end
 
       diff = Enemy::Base::DIFFICULTIES[@difficulty]
-      diff_colors = ["\e[92m", "\e[93m", "\e[38;2;255;165;0m", "\e[91m"]
-      diff_label = "< #{diff[:name]} >"
-      dc = [(cols - diff_label.size) / 2 + 1, 1].max
-      lines[2] = TerminalOutput.fit_ansi("#{" " * (dc - 1)}#{diff_colors[@difficulty]}#{diff_label}\e[0m", cols)
+      lines[2] = cache[[:diff, cols, @difficulty]] ||= begin
+        diff_label = "< #{diff[:name]} >"
+        dc = [(cols - diff_label.size) / 2 + 1, 1].max
+        TerminalOutput.fit_ansi("#{" " * (dc - 1)}#{MISSION_SELECT_DIFF_COLORS[@difficulty]}#{diff_label}\e[0m", cols)
+      end
 
       missions.each_with_index do |klass, i|
-        m = klass.new
         row = 5 + i * 2
-        label = "  #{i + 1}. #{m.name}"
-        lc = [(cols - 40) / 2 + 1, 1].max
-        text = if i == selected
-                 "\e[1;97;44m> #{label.strip.ljust(38)}\e[0m"
-               else
-                 "\e[97m  #{label.strip.ljust(38)}\e[0m"
-               end
-        lines[row - 1] = TerminalOutput.fit_ansi("#{" " * (lc - 1)}#{text}", cols)
+        is_selected = i == selected
+        lines[row - 1] = cache[[:mission, cols, i, is_selected, klass]] ||= begin
+          m = klass.new
+          label = "  #{i + 1}. #{m.name}"
+          lc = [(cols - 40) / 2 + 1, 1].max
+          text = if is_selected
+                   "\e[1;97;44m> #{label.strip.ljust(38)}\e[0m"
+                 else
+                   "\e[97m  #{label.strip.ljust(38)}\e[0m"
+                 end
+          TerminalOutput.fit_ansi("#{" " * (lc - 1)}#{text}", cols)
+        end
       end
 
       brief_row = 5 + missions.size * 2 + 1
-      m = missions[selected].new
-      briefing = m.briefing
-      bc = [(cols - briefing.size) / 2 + 1, 1].max
-      lines[brief_row - 1] = TerminalOutput.fit_ansi("#{" " * (bc - 1)}\e[38;2;180;180;200m#{briefing}\e[0m", cols)
+      lines[brief_row - 1] = cache[[:brief, cols, missions[selected]]] ||= begin
+        m = missions[selected].new
+        briefing = m.briefing
+        bc = [(cols - briefing.size) / 2 + 1, 1].max
+        TerminalOutput.fit_ansi("#{" " * (bc - 1)}\e[38;2;180;180;200m#{briefing}\e[0m", cols)
+      end
 
       info_row = brief_row + 2
-      edefs = m.enemy_defs
-      base_crawler = edefs.count { |e| e[4] == :crawler }
-      base_executor = edefs.count { |e| e[4] == :executor }
-      extra = diff[:extra_enemies]
-      extra_crawler = 0
-      extra_executor = 0
-      extra.times do |i|
-        src_type = edefs[i % edefs.size][4]
-        src_type == :crawler ? (extra_crawler += 1) : (extra_executor += 1)
+      lines[info_row - 1] = cache[[:info, cols, @difficulty, missions[selected]]] ||= begin
+        m = missions[selected].new
+        edefs = m.enemy_defs
+        base_crawler = edefs.count { |e| e[4] == :crawler }
+        base_executor = edefs.count { |e| e[4] == :executor }
+        extra = diff[:extra_enemies]
+        extra_crawler = 0
+        extra_executor = 0
+        extra.times do |i|
+          src_type = edefs[i % edefs.size][4]
+          src_type == :crawler ? (extra_crawler += 1) : (extra_executor += 1)
+        end
+        crawler_c = base_crawler + extra_crawler
+        executor_c = base_executor + extra_executor
+        info = "Enemies: #{crawler_c} Crawler#{crawler_c != 1 ? "s" : ""}"
+        info += ", #{executor_c} Executor#{executor_c != 1 ? "s" : ""}" if executor_c > 0
+        info += "  |  HP x#{diff[:hp_mult]}"
+        ic = [(cols - info.size) / 2 + 1, 1].max
+        TerminalOutput.fit_ansi("#{" " * (ic - 1)}\e[38;2;140;140;160m#{info}\e[0m", cols)
       end
-      crawler_c = base_crawler + extra_crawler
-      executor_c = base_executor + extra_executor
-      info = "Enemies: #{crawler_c} Crawler#{crawler_c != 1 ? "s" : ""}"
-      info += ", #{executor_c} Executor#{executor_c != 1 ? "s" : ""}" if executor_c > 0
-      info += "  |  HP x#{diff[:hp_mult]}"
-      ic = [(cols - info.size) / 2 + 1, 1].max
-      lines[info_row - 1] = TerminalOutput.fit_ansi("#{" " * (ic - 1)}\e[38;2;140;140;160m#{info}\e[0m", cols)
 
       ctrl_row = info_row + 2
-      ctrl = "Up/Down: Select   Left/Right: Difficulty   Enter/1-5: Start   Q: Back"
-      cc = [(cols - ctrl.size) / 2 + 1, 1].max
-      lines[ctrl_row - 1] = TerminalOutput.fit_ansi("#{" " * (cc - 1)}\e[38;2;100;100;120m#{ctrl}\e[0m", cols)
+      lines[ctrl_row - 1] = cache[[:ctrl, cols]] ||= begin
+        cc = [(cols - MISSION_SELECT_CTRL.size) / 2 + 1, 1].max
+        TerminalOutput.fit_ansi("#{" " * (cc - 1)}\e[38;2;100;100;120m#{MISSION_SELECT_CTRL}\e[0m", cols)
+      end
 
       lines.each_with_index do |line, index|
         buf << line
