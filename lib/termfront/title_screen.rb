@@ -7,6 +7,10 @@ module Termfront
       [13.0, 8.0], [10.0, 8.5], [5.0, 8.5], [2.5, 5.0]
     ].freeze
 
+    TITLE_TEXT = "T E R M F R O N T"
+    SUB_TEXT = "Terminal FPS"
+    MENU_ITEMS = ["[P] PvP", "[F] Wavesfight", "[C] Campaign", "[S] Training", "[Q] Quit"].freeze
+
     def initialize(stdout)
       @stdout = stdout
       @title_spin = 0.0
@@ -22,6 +26,11 @@ module Termfront
         @demo_map_w = @demo_map[0].size
         @demo_enemies = m.enemy_defs.freeze
       end
+
+      @static_lines_cols = 0
+      @static_title_line = nil
+      @static_sub_line = nil
+      @static_menu_lines = nil
     end
 
     def show
@@ -71,6 +80,20 @@ module Termfront
 
     def clock
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def ensure_static_lines(cols)
+      return if @static_lines_cols == cols
+
+      tc = [(cols - TITLE_TEXT.size) / 2 + 1, 1].max
+      sc = [(cols - SUB_TEXT.size) / 2 + 1, 1].max
+      @static_title_line = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{TITLE_TEXT}\e[0m", cols)
+      @static_sub_line = TerminalOutput.fit_ansi("#{" " * (sc - 1)}\e[38;2;80;80;120m#{SUB_TEXT}\e[0m", cols)
+      @static_menu_lines = MENU_ITEMS.map do |item|
+        ic = [(cols - item.size) / 2 + 1, 1].max
+        TerminalOutput.fit_ansi("#{" " * (ic - 1)}\e[97m#{item}\e[0m", cols)
+      end
+      @static_lines_cols = cols
     end
 
     def render
@@ -280,22 +303,16 @@ module Termfront
         lines[r] = TerminalOutput.fit_ansi(line, cols)
       end
 
-      # Title text
-      title_row = [[th + 1, rows - 4].min, 1].max
-      title = "T E R M F R O N T"
-      sub   = "Terminal FPS"
-      tc = [(cols - title.size) / 2 + 1, 1].max
-      sc = [(cols - sub.size) / 2 + 1, 1].max
-      lines[title_row - 1] = TerminalOutput.fit_ansi("#{" " * (tc - 1)}\e[1;38;2;120;140;255m#{title}\e[0m", cols)
-      lines[title_row] = TerminalOutput.fit_ansi("#{" " * (sc - 1)}\e[38;2;80;80;120m#{sub}\e[0m", cols)
+      # Title text + menu items (memoized per cols)
+      ensure_static_lines(cols)
 
-      # Menu items
-      items = ["[P] PvP", "[F] Wavesfight", "[C] Campaign", "[S] Training", "[Q] Quit"]
-      items_count_for_menu = items.size
-      menu_row = [[title_row + 2, rows - items_count_for_menu].min, 1].max
-      items.each_with_index do |item, i|
-        ic = [(cols - item.size) / 2 + 1, 1].max
-        lines[menu_row + i - 1] = TerminalOutput.fit_ansi("#{" " * (ic - 1)}\e[97m#{item}\e[0m", cols)
+      title_row = [[th + 1, rows - 4].min, 1].max
+      lines[title_row - 1] = @static_title_line
+      lines[title_row] = @static_sub_line
+
+      menu_row = [[title_row + 2, rows - MENU_ITEMS.size].min, 1].max
+      @static_menu_lines.each_with_index do |menu_line, i|
+        lines[menu_row + i - 1] = menu_line
       end
 
       lines.each_with_index do |line, index|
