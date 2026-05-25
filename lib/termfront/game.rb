@@ -10,6 +10,7 @@ module Termfront
       @scene_player = ScenePlayer.new(@stdout, audio: @audio)
       @demo_player = DemoPlayer.new(@stdout, @renderer)
       @difficulty = nil
+      Signal.trap("WINCH") { @renderer.invalidate_size_cache! }
     end
 
     def start

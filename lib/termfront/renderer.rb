@@ -26,10 +26,16 @@ module Termfront
       @drop_sprites = []
       @ally_sprites = []
       @radar_line_buf = +""
+      @size_cache = nil
+      @size_cache_at = -Float::INFINITY
+    end
+
+    def invalidate_size_cache!
+      @size_cache = nil
     end
 
     def render(player:, map:, enemies:, projectiles:, drops:, terminals: [], status_line: nil, allies: [])
-      rows, cols = @stdout.winsize
+      rows, cols = current_size
       rows = [rows, 6].max
       cols = [cols, 20].max
 
@@ -150,6 +156,15 @@ module Termfront
     end
 
     private
+
+    def current_size
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      if @size_cache.nil? || now - @size_cache_at >= 0.25
+        @size_cache = @stdout.winsize
+        @size_cache_at = now
+      end
+      @size_cache
+    end
 
     def build_radar_grid_template
       r = Config::RADAR_RADIUS
