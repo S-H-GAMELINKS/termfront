@@ -3,7 +3,6 @@
 module Termfront
   module TerminalOutput
     module_function
-    ANSI_PATTERN = /\e\[[0-9;]*[A-Za-z]/.freeze
 
     def begin_frame(home: false, clear: false)
       buf = +""
@@ -17,25 +16,41 @@ module Termfront
     end
 
     def fit_ansi(text, width)
-      visible = 0
       out = +""
-      index = 0
+      visible = 0
+      any_ansi = false
+      i = 0
+      len = text.bytesize
+      segment_start = 0
 
-      while index < text.length && visible < width
-        if (match = ANSI_PATTERN.match(text, index)) && match.begin(0) == index
-          out << match[0]
-          index = match.end(0)
-          next
+      while i < len
+        byte = text.getbyte(i)
+        if byte == 0x1B
+          out << text.byteslice(segment_start, i - segment_start) if i > segment_start
+
+          esc_start = i
+          i += 1
+          while i < len
+            b = text.getbyte(i)
+            i += 1
+            break if (b >= 65 && b <= 90) || (b >= 97 && b <= 122)
+          end
+          out << text.byteslice(esc_start, i - esc_start)
+          any_ansi = true
+          segment_start = i
+        else
+          if (byte & 0xC0) != 0x80
+            break if visible >= width
+
+            visible += 1
+          end
+          i += 1
         end
-
-        char = text[index]
-        out << char
-        visible += 1
-        index += 1
       end
 
-      out << "\e[0m" if out.include?("\e[")
-      out << (" " * (width - visible)) if visible < width
+      out << text.byteslice(segment_start, i - segment_start) if i > segment_start
+      out << "\e[0m" if any_ansi
+      (width - visible).times { out << " " } if visible < width
       out
     end
 
