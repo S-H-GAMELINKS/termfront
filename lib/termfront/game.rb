@@ -131,6 +131,7 @@ module Termfront
     def run_game_loop(show_complete_banner: true)
       STDIN.raw do |stdin|
         last_time = clock
+        last_render = last_time - Config::RENDER_DT
 
         loop do
           now = clock
@@ -146,11 +147,14 @@ module Termfront
           end
 
           update(dt)
-          @renderer.render(
-            player: @player, map: @map,
-            enemies: @enemies, projectiles: @projectiles,
-            drops: @player.drops, terminals: @terminals
-          )
+          if now - last_render >= Config::RENDER_DT
+            @renderer.render(
+              player: @player, map: @map,
+              enemies: @enemies, projectiles: @projectiles,
+              drops: @player.drops, terminals: @terminals
+            )
+            last_render = now
+          end
 
           if @player.dead
             rows, cols = @stdout.winsize
@@ -176,6 +180,7 @@ module Termfront
     def run_wavesfight_loop
       STDIN.raw do |stdin|
         last_time = clock
+        last_render = last_time - Config::RENDER_DT
 
         loop do
           now = clock
@@ -191,12 +196,15 @@ module Termfront
           end
 
           update(dt)
-          @renderer.render(
-            player: @player, map: @map,
-            enemies: @enemies, projectiles: @projectiles,
-            drops: @player.drops, terminals: @terminals,
-            status_line: "  WAVE #{@wave}  #{Enemy::Base::DIFFICULTIES[@difficulty][:name]}"
-          )
+          if now - last_render >= Config::RENDER_DT
+            @renderer.render(
+              player: @player, map: @map,
+              enemies: @enemies, projectiles: @projectiles,
+              drops: @player.drops, terminals: @terminals,
+              status_line: "  WAVE #{@wave}  #{Enemy::Base::DIFFICULTIES[@difficulty][:name]}"
+            )
+            last_render = now
+          end
 
           if @player.dead
             rows, cols = @stdout.winsize
@@ -209,6 +217,7 @@ module Termfront
             show_wave_clear
             start_wavesfight_wave
             last_time = clock
+            last_render = clock - Config::RENDER_DT
           end
 
           cap_frame(now)

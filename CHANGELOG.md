@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Rewrite `TerminalOutput.fit_ansi` to walk the input by byte index with `getbyte` and `byteslice` instead of scanning with a regular expression, removing the per-line `Regexp#match` / `MatchData` allocations that dominated the renderer's CPU profile under YJIT
 - Render the title screen at 30 Hz while still advancing its spin animation and polling input at 60 Hz, so the per-frame renderer cost halves without making the demo motion feel choppy
 - Cache the demo mission instance, its tile-map, and its enemy definitions inside `TitleScreen#initialize` instead of rebuilding them every frame
+- Render singleplayer and Wavesfight at 30 Hz while still running the update step, physics, and input polling at 60 Hz, halving the in-game renderer cost without slowing the simulation or input response
 
 ## [0.1.5] - 2026-05-25
 
