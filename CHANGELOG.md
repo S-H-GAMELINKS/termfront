@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Renderer reuses the per-column raycast buffers and the virtual pixel grid across frames instead of allocating fresh arrays each tick, only re-allocating when the terminal is resized
 - Build the radar background grid, horizontal rule, and ANSI-styled radar glyphs once and reuse them across frames
 - Look up 256-color SGR escape sequences from a precomputed table and memoize truecolor SGR sequences to avoid rebuilding the same ANSI strings every cell
+- Reuse renderer sprite collection arrays and the radar line buffer across frames, and sort sprites with a comparator block instead of `sort_by`
 
 ### Fixed
 

@@ -21,6 +21,11 @@ module Termfront
       @radar_drop_glyphs = {}
       @fg_truecolor_cache = {}
       @bg_truecolor_cache = {}
+      @enemy_sprites = []
+      @proj_sprites = []
+      @drop_sprites = []
+      @ally_sprites = []
+      @radar_line_buf = +""
     end
 
     def render(player:, map:, enemies:, projectiles:, drops:, terminals: [], status_line: nil, allies: [])
@@ -386,7 +391,7 @@ module Termfront
       ]
 
       radar_h.times do |row|
-        line = +""
+        line = @radar_line_buf.clear
         if row < diam
           line << "  "
           diam.times do |cx|
@@ -421,7 +426,7 @@ module Termfront
       virt_h = view_h * 2
       inv = 1.0 / (px * dy - py * dx)
 
-      sprites = []
+      @enemy_sprites.clear
       enemies.each do |e|
         next unless e.alive
 
@@ -431,10 +436,10 @@ module Termfront
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
 
-        sprites << [tz, tx, e]
+        @enemy_sprites << [tz, tx, e]
       end
 
-      proj_sprites = []
+      @proj_sprites.clear
       projectiles.each do |p|
         ex = p.x - player.x
         ey = p.y - player.y
@@ -442,12 +447,12 @@ module Termfront
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
 
-        proj_sprites << [tz, tx, p]
+        @proj_sprites << [tz, tx, p]
       end
 
-      sprites.sort_by! { |s| -s[0] }
+      @enemy_sprites.sort! { |a, b| b[0] <=> a[0] }
 
-      sprites.each do |tz, tx, e|
+      @enemy_sprites.each do |tz, tx, e|
         sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
         sprite_h = (virt_h / tz).to_i
         draw_top = [(virt_h / 2 - sprite_h / 2), 0].max
@@ -516,7 +521,7 @@ module Termfront
       end
 
       # Render weapon drops
-      drop_sprites = []
+      @drop_sprites.clear
       drops.each do |d|
         ex = d.x - player.x
         ey = d.y - player.y
@@ -524,11 +529,11 @@ module Termfront
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
 
-        drop_sprites << [tz, tx, d]
+        @drop_sprites << [tz, tx, d]
       end
-      drop_sprites.sort_by! { |s| -s[0] }
+      @drop_sprites.sort! { |a, b| b[0] <=> a[0] }
 
-      drop_sprites.each do |tz, tx, d|
+      @drop_sprites.each do |tz, tx, d|
         sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
         sprite_h = (virt_h / tz * 0.3).to_i.clamp(2, virt_h / 2)
         ground = (virt_h / 2 + virt_h / tz * 0.35).to_i
@@ -562,8 +567,8 @@ module Termfront
       end
 
       # Render projectiles
-      proj_sprites.sort_by! { |s| -s[0] }
-      proj_sprites.each do |tz, tx, p|
+      @proj_sprites.sort! { |a, b| b[0] <=> a[0] }
+      @proj_sprites.each do |tz, tx, p|
         sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
         pw = (4.0 / tz).ceil.clamp(1, 5)
         ph = (virt_h / tz * 0.15).ceil.clamp(2, 6)
@@ -605,7 +610,7 @@ module Termfront
       virt_h = view_h * 2
       inv = 1.0 / (px * dy - py * dx)
 
-      sprites = []
+      @ally_sprites.clear
       allies.each do |ally|
         ex = ally.x - player.x
         ey = ally.y - player.y
@@ -613,11 +618,11 @@ module Termfront
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
 
-        sprites << [tz, tx, ally]
+        @ally_sprites << [tz, tx, ally]
       end
-      sprites.sort_by! { |s| -s[0] }
+      @ally_sprites.sort! { |a, b| b[0] <=> a[0] }
 
-      sprites.each do |tz, tx, ally|
+      @ally_sprites.each do |tz, tx, ally|
         sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
         sprite_h = (virt_h / tz).to_i
         draw_top = [(virt_h / 2 - sprite_h / 2), 0].max
