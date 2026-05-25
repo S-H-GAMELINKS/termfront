@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+RubyVM::YJIT.enable if defined?(RubyVM::YJIT)
+
 require "termfront"
 
 Termfront.start

@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 - Memoize the HUD shield and ammo lines so `fit_ansi` only re-runs when the shown shield value, weapon, ammo, pickup hint, or terminal width actually change
 - Inline the color-mode branching and SGR lookups into `Renderer#render_view` to remove per-cell `bg_only?`, `ansi_fg`, and `ansi_bg` method calls (about 72,000 calls per second at 30 Hz on an 80-wide terminal)
+- Enable YJIT on startup so the hot Ruby methods in the renderer (`build_view_pixels`, `render_view`, `cast_ray`, etc.) get JIT-compiled instead of interpreted
 
 ## [0.1.5] - 2026-05-25
 
