@@ -19,6 +19,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - PvP server now aggregates outgoing player state on a 30 Hz server tick instead of relaying each incoming state message immediately, reducing TLS write bursts on small VMs
 - PvP match loop `IO.select` timeout shortened from 500 ms to ~16 ms so the new 30 Hz broadcast tick is not delayed by idle reads
 - PvP client opponent interpolation now converges within ~40 ms (lerp factor raised from 15 to 25) so remote players track the new 30 Hz broadcast tick within a single frame
+- Run the title demo, campaign missions, Wavesfight, and PvP at 60 FPS
 
 ### Fixed
 
