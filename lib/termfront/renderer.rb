@@ -629,8 +629,8 @@ module Termfront
       # Render weapon drops
       @drop_sprites.clear
       drops.each do |d|
-        ex = d.x - player.x
-        ey = d.y - player.y
+        ex = d.x - player_x
+        ey = d.y - player_y
         tx = inv * (dy * ex - dx * ey)
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
@@ -640,70 +640,83 @@ module Termfront
       @drop_sprites.sort! { |a, b| b[0] <=> a[0] }
 
       @drop_sprites.each do |tz, tx, d|
-        sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
-        sprite_h = (virt_h / tz * 0.3).to_i.clamp(2, virt_h / 2)
-        ground = (virt_h / 2 + virt_h / tz * 0.35).to_i
-        draw_bot = [ground, virt_h].min
-        draw_top = [draw_bot - sprite_h, 0].max
-        sprite_w = (sprite_h / 2.0).to_i.clamp(1, 6)
-        start_x = [sx - sprite_w / 2, 0].max
-        end_x   = [sx + sprite_w / 2, view_w - 1].min
+        sx = (half_view_w * (1 + tx / tz)).to_i
+        sprite_h = (virt_h / tz * 0.3).to_i.clamp(2, half_virt_h)
+        ground = (half_virt_h + virt_h / tz * 0.35).to_i
+        draw_bot = ground < virt_h ? ground : virt_h
+        draw_top = draw_bot - sprite_h
+        draw_top = 0 if draw_top < 0
+        sprite_w = (sprite_h / 2).clamp(1, 6)
+        start_x = sx - sprite_w / 2
+        start_x = 0 if start_x < 0
+        end_x = sx + sprite_w / 2
+        end_x = view_w_last if end_x > view_w_last
 
         color = d.sprite_color
+        r_top = (draw_top + 1) >> 1
+        r_bot = draw_bot >> 1
 
-        start_x.upto(end_x) do |c|
-          next if c < 0 || c >= view_w
-          next if dists[c] < tz
-
-          r_top = (draw_top / 2.0).ceil
-          r_bot = (draw_bot / 2.0).floor
-          r_top.upto(r_bot - 1) do |r|
-            next if r < 0 || r >= view_h
-
-            vp0 = r * 2
-            vp1 = r * 2 + 1
-            top_in = vp0 >= draw_top && vp0 < draw_bot
-            bot_in = vp1 >= draw_top && vp1 < draw_bot
-            next unless top_in || bot_in
-
-            pixels[vp0][c] = color if top_in
-            pixels[vp1][c] = color if bot_in
+        c = start_x
+        while c <= end_x
+          if c >= 0 && c < view_w && dists[c] >= tz
+            r = r_top
+            while r < r_bot
+              if r >= 0 && r < view_h
+                vp0 = r << 1
+                vp1 = vp0 + 1
+                top_in = vp0 >= draw_top && vp0 < draw_bot
+                bot_in = vp1 >= draw_top && vp1 < draw_bot
+                if top_in || bot_in
+                  pixels[vp0][c] = color if top_in
+                  pixels[vp1][c] = color if bot_in
+                end
+              end
+              r += 1
+            end
           end
+          c += 1
         end
       end
 
       # Render projectiles
       @proj_sprites.sort! { |a, b| b[0] <=> a[0] }
       @proj_sprites.each do |tz, tx, p|
-        sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
+        sx = (half_view_w * (1 + tx / tz)).to_i
         pw = (4.0 / tz).ceil.clamp(1, 5)
         ph = (virt_h / tz * 0.15).ceil.clamp(2, 6)
-        vmid = virt_h / 2
-        draw_top = [(vmid - ph / 2), 0].max
-        draw_bot = [(vmid + ph / 2).clamp(draw_top + 2, virt_h), virt_h].min
-        start_x = [sx - pw / 2, 0].max
-        end_x   = [sx + pw / 2, view_w - 1].min
-        col_code = p.type == :executor ? "94" : "93"
+        draw_top = half_virt_h - ph / 2
+        draw_top = 0 if draw_top < 0
+        draw_bot = half_virt_h + ph / 2
+        draw_bot = draw_top + 2 if draw_bot < draw_top + 2
+        draw_bot = virt_h if draw_bot > virt_h
+        start_x = sx - pw / 2
+        start_x = 0 if start_x < 0
+        end_x = sx + pw / 2
+        end_x = view_w_last if end_x > view_w_last
+        proj_color = p.type == :executor ? "94;94;255" : "255;210;80"
+        r_top = (draw_top + 1) >> 1
+        r_bot = draw_bot >> 1
+        r_bot = r_top + 1 if r_bot < r_top + 1
 
-        start_x.upto(end_x) do |c|
-          next if c < 0 || c >= view_w
-          next if dists[c] < tz
-
-          r_top = (draw_top / 2.0).ceil
-          r_bot = [(draw_bot / 2.0).floor, r_top + 1].max
-          r_top.upto(r_bot - 1) do |r|
-            next if r < 0 || r >= view_h
-
-            vp0 = r * 2
-            vp1 = r * 2 + 1
-            top_in = vp0 >= draw_top && vp0 < draw_bot
-            bot_in = vp1 >= draw_top && vp1 < draw_bot
-            next unless top_in || bot_in
-
-            proj_color = col_code == "94" ? "94;94;255" : "255;210;80"
-            pixels[vp0][c] = proj_color if top_in
-            pixels[vp1][c] = proj_color if bot_in
+        c = start_x
+        while c <= end_x
+          if c >= 0 && c < view_w && dists[c] >= tz
+            r = r_top
+            while r < r_bot
+              if r >= 0 && r < view_h
+                vp0 = r << 1
+                vp1 = vp0 + 1
+                top_in = vp0 >= draw_top && vp0 < draw_bot
+                bot_in = vp1 >= draw_top && vp1 < draw_bot
+                if top_in || bot_in
+                  pixels[vp0][c] = proj_color if top_in
+                  pixels[vp1][c] = proj_color if bot_in
+                end
+              end
+              r += 1
+            end
           end
+          c += 1
         end
       end
     end

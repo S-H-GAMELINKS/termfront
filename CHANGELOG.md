@@ -20,6 +20,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Memoize every line of `Game#render_mission_select` keyed by terminal width, current selection, difficulty, and mission class, so the nine `fit_ansi` calls per frame collapse to cache lookups while the cursor is idle
 - Reuse the radar's enemy / drop / terminal / ally cell hashes between frames and key them by integer (`sy * diam + sx`) to drop per-cell `Array` allocations, hoisting `Config::RADAR_RANGE`, `RADAR_RANGE_SQ`, `r*r`, and the player position as locals so YJIT keeps the radar projection loops tight
 - Tighten the enemy half of `Renderer#overlay_enemies_3d`: hoist the FOV tangent, player position, and half-frame constants as locals, replace the `upto` loops with `while`, use integer shift instead of `to_f` / `.ceil` / `.floor` for half-block row indexing, and cache the float versions of `actual_h` / `actual_w` so the per-cell sprite division loop stops allocating new floats every iteration
+- Apply the same `while`-loop and integer-math pattern to the drop and projectile branches of `Renderer#overlay_enemies_3d`, reusing the hoisted player position and half-frame constants and computing the projectile color directly instead of through an intermediate ANSI code string
 
 ## [0.1.5] - 2026-05-25
 
