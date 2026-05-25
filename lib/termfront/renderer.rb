@@ -296,6 +296,11 @@ module Termfront
     end
 
     def render_view(buf, view_h, view_w, pixels)
+      fg_256 = FG_256
+      bg_256 = BG_256
+      fg_cache = @fg_truecolor_cache
+      bg_cache = @bg_truecolor_cache
+
       view_h.times do |r|
         vp0 = r * 2
         vp1 = r * 2 + 1
@@ -309,16 +314,16 @@ module Termfront
           bc = bot_row[c]
 
           if tc == bc
-            if bg_only?(tc)
+            if tc.is_a?(Integer)
               if tc != pbg
-                buf << ansi_bg(tc)
+                buf << bg_256[tc]
                 pbg = tc
                 pfg = nil
               end
               buf << " "
             else
               if tc != pfg || pbg
-                buf << ansi_fg(tc)
+                buf << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
                 pfg = tc
                 pbg = nil
               end
@@ -326,7 +331,9 @@ module Termfront
             end
           else
             if tc != pfg || bc != pbg
-              buf << ansi_fg(tc) << ansi_bg(bc)
+              fg = tc.is_a?(Integer) ? fg_256[tc] : (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
+              bg = bc.is_a?(Integer) ? bg_256[bc] : (bg_cache[bc] ||= "\e[48;2;#{bc}m".freeze)
+              buf << fg << bg
               pfg = tc
               pbg = bc
             end
