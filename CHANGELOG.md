@@ -17,6 +17,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Render singleplayer and Wavesfight at 30 Hz while still running the update step, physics, and input polling at 60 Hz, halving the in-game renderer cost without slowing the simulation or input response
 - Rewrite `Renderer#build_view_pixels` with column-major `while` loops that read `wtop`/`wbot`/`wcol` once per column and fill the ceiling / wall / floor segments without per-cell branching, hoisting `Config::CEIL_C` / `Config::FLOOR_C` and `@pixels` as locals so YJIT keeps the hot loop tight
 - Memoize the title screen's static lines (logo, subtitle, and the five menu entries) per terminal width so `fit_ansi` runs once instead of seven times per title-screen frame
+- Memoize every line of `Game#render_mission_select` keyed by terminal width, current selection, difficulty, and mission class, so the nine `fit_ansi` calls per frame collapse to cache lookups while the cursor is idle
 
 ## [0.1.5] - 2026-05-25
 
