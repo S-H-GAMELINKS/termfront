@@ -21,6 +21,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - PvP client opponent interpolation now converges within ~40 ms (lerp factor raised from 15 to 25) so remote players track the new 30 Hz broadcast tick within a single frame
 - Run the title demo, campaign missions, Wavesfight, and PvP at 60 FPS
 
+### Removed
+
+- Stopped emitting DEC 2026 synchronized update escape sequences around each frame and removed the `TERMFRONT_SYNC_UPDATES` environment switch; non-supporting terminals (some SSH paths, older xterm) were paying parsing cost for shapes they ignore, while supporting terminals show no visible regression
+
 ### Fixed
 
 - Wavesfight wave advance now fully restores each surviving and revived player's shield to `Config::SHIELD_MAX`; previously only a +35 partial recovery was applied, which left revived players at 35%

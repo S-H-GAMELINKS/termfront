@@ -5,20 +5,15 @@ module Termfront
     module_function
     ANSI_PATTERN = /\e\[[0-9;]*[A-Za-z]/.freeze
 
-    def sync_updates?
-      ENV.fetch("TERMFRONT_SYNC_UPDATES", "1") == "1"
-    end
-
     def begin_frame(home: false, clear: false)
       buf = +""
-      buf << "\e[?2026h" if sync_updates?
       buf << "\e[H" if home
       buf << "\e[2J" if clear
       buf
     end
 
     def end_frame
-      sync_updates? ? "\e[?2026l" : ""
+      ""
     end
 
     def fit_ansi(text, width)
