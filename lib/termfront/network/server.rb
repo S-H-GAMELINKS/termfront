@@ -31,6 +31,7 @@ module Termfront
       MAX_PVP_RANGE = 30.0
       STATE_BROADCAST_HZ = 30
       STATE_BROADCAST_DT = 1.0 / STATE_BROADCAST_HZ
+      SELECT_TIMEOUT = 1.0 / 60.0
       PVP_MAP = [
         "####################",
         "#........##........#",
@@ -285,7 +286,7 @@ module Termfront
           end
           break if sockets.empty?
 
-          readable, = IO.select(sockets, nil, nil, 0.5)
+          readable, = IO.select(sockets, nil, nil, SELECT_TIMEOUT)
 
           now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           if (reason = match_timeout_reason(now, match_start, last_activity))

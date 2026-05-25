@@ -17,6 +17,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - PvP hit raycast now culls candidates beyond `MAX_PVP_RANGE` and skips the line-of-sight check when the candidate is already farther than the current best
 - Multiplayer server `broadcast` now serializes each outgoing message once and writes the same JSON line to every recipient
 - PvP server now aggregates outgoing player state on a 30 Hz server tick instead of relaying each incoming state message immediately, reducing TLS write bursts on small VMs
+- PvP match loop `IO.select` timeout shortened from 500 ms to ~16 ms so the new 30 Hz broadcast tick is not delayed by idle reads
 
 ### Fixed
 
