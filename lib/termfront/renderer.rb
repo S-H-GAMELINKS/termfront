@@ -505,17 +505,23 @@ module Termfront
     def overlay_enemies_3d(pixels, view_h, view_w, dists, player, enemies, projectiles, drops)
       dx = Math.cos(player.angle)
       dy = Math.sin(player.angle)
-      px = -dy * Math.tan(Config::FOV / 2.0)
-      py = dx * Math.tan(Config::FOV / 2.0)
+      tan_half_fov = Math.tan(Config::FOV / 2.0)
+      px = -dy * tan_half_fov
+      py = dx * tan_half_fov
       virt_h = view_h * 2
+      half_virt_h = virt_h / 2
+      half_view_w = view_w / 2.0
+      view_w_last = view_w - 1
       inv = 1.0 / (px * dy - py * dx)
+      player_x = player.x
+      player_y = player.y
 
       @enemy_sprites.clear
       enemies.each do |e|
         next unless e.alive
 
-        ex = e.x - player.x
-        ey = e.y - player.y
+        ex = e.x - player_x
+        ey = e.y - player_y
         tx = inv * (dy * ex - dx * ey)
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
@@ -525,8 +531,8 @@ module Termfront
 
       @proj_sprites.clear
       projectiles.each do |p|
-        ex = p.x - player.x
-        ey = p.y - player.y
+        ex = p.x - player_x
+        ey = p.y - player_y
         tx = inv * (dy * ex - dx * ey)
         tz = inv * (-py * ex + px * ey)
         next if tz < 0.2
@@ -537,70 +543,86 @@ module Termfront
       @enemy_sprites.sort! { |a, b| b[0] <=> a[0] }
 
       @enemy_sprites.each do |tz, tx, e|
-        sx = ((view_w / 2.0) * (1 + tx / tz)).to_i
+        sx = (half_view_w * (1 + tx / tz)).to_i
         sprite_h = (virt_h / tz).to_i
-        draw_top = [(virt_h / 2 - sprite_h / 2), 0].max
-        draw_bot = [(virt_h / 2 + sprite_h / 2), virt_h].min
-        sprite_w = (sprite_h / 2.0).to_i
-        start_x = [sx - sprite_w / 2, 0].max
-        end_x   = [sx + sprite_w / 2, view_w - 1].min
+        draw_top = half_virt_h - sprite_h / 2
+        draw_top = 0 if draw_top < 0
+        draw_bot = half_virt_h + sprite_h / 2
+        draw_bot = virt_h if draw_bot > virt_h
+        sprite_w = sprite_h / 2
+        start_x = sx - sprite_w / 2
+        start_x = 0 if start_x < 0
+        end_x = sx + sprite_w / 2
+        end_x = view_w_last if end_x > view_w_last
 
         actual_h = draw_bot - draw_top
         actual_w = end_x - start_x + 1
         next if actual_h < 1 || actual_w < 1
 
-        fallback_color = e.sprite_id == :executor ? "100;60;200" : "220;140;30"
+        sprite_id = e.sprite_id
+        fallback_color = sprite_id == :executor ? "100;60;200" : "220;140;30"
         use_shape = actual_h >= 6
+        r_top = (draw_top + 1) >> 1
+        r_bot = draw_bot >> 1
+        actual_h_f = actual_h.to_f
+        actual_w_f = actual_w.to_f
 
-        start_x.upto(end_x) do |c|
-          next if c < 0 || c >= view_w
-          next if dists[c] < tz
+        c = start_x
+        while c <= end_x
+          if c >= 0 && c < view_w && dists[c] >= tz
+            nx = (c - start_x) / actual_w_f
 
-          nx = (c - start_x).to_f / actual_w
+            r = r_top
+            while r < r_bot
+              vp0 = r << 1
+              vp1 = vp0 + 1
+              top_in = vp0 >= draw_top && vp0 < draw_bot
+              bot_in = vp1 >= draw_top && vp1 < draw_bot
 
-          r_top = (draw_top / 2.0).ceil
-          r_bot = (draw_bot / 2.0).floor
-          r_top.upto(r_bot - 1) do |r|
-            vp0 = r * 2
-            vp1 = r * 2 + 1
-            top_in = vp0 >= draw_top && vp0 < draw_bot
-            bot_in = vp1 >= draw_top && vp1 < draw_bot
-            next unless top_in || bot_in
-
-            if use_shape
-              ny0 = top_in ? (vp0 - draw_top).to_f / actual_h : nil
-              ny1 = bot_in ? (vp1 - draw_top).to_f / actual_h : nil
-              top_color = ny0 ? Sprite.for(e.sprite_id, nx, ny0) : nil
-              bot_color = ny1 ? Sprite.for(e.sprite_id, nx, ny1) : nil
-              next unless top_color || bot_color
-
-              pixels[vp0][c] = top_color if top_color
-              pixels[vp1][c] = bot_color if bot_color
-            else
-              pixels[vp0][c] = fallback_color if top_in
-              pixels[vp1][c] = fallback_color if bot_in
+              if top_in || bot_in
+                if use_shape
+                  ny0 = top_in ? (vp0 - draw_top) / actual_h_f : nil
+                  ny1 = bot_in ? (vp1 - draw_top) / actual_h_f : nil
+                  top_color = ny0 ? Sprite.for(sprite_id, nx, ny0) : nil
+                  bot_color = ny1 ? Sprite.for(sprite_id, nx, ny1) : nil
+                  if top_color || bot_color
+                    pixels[vp0][c] = top_color if top_color
+                    pixels[vp1][c] = bot_color if bot_color
+                  end
+                else
+                  pixels[vp0][c] = fallback_color if top_in
+                  pixels[vp1][c] = fallback_color if bot_in
+                end
+              end
+              r += 1
             end
           end
+          c += 1
         end
 
         next unless e.max_hp > 1
 
-        bar_row = (draw_top / 2.0).ceil - 1
+        bar_row = r_top - 1
         next unless bar_row >= 0 && bar_row < view_h
 
-        bar_w = [actual_w, 2].max
-        bar_sx = [sx - bar_w / 2, 0].max
-        bar_ex = [bar_sx + bar_w - 1, view_w - 1].min
+        bar_w = actual_w > 2 ? actual_w : 2
+        bar_sx = sx - bar_w / 2
+        bar_sx = 0 if bar_sx < 0
+        bar_ex = bar_sx + bar_w - 1
+        bar_ex = view_w_last if bar_ex > view_w_last
         hp_pct = e.hp.to_f / e.max_hp
         filled = (hp_pct * (bar_ex - bar_sx + 1)).ceil
-        bar_sx.upto(bar_ex) do |c|
-          next if c < 0 || c >= view_w
-          next if dists[c] < tz
-
-          ci = c - bar_sx
-          color = ci < filled ? "0;200;0" : "200;0;0"
-          pixels[bar_row * 2][c] = color
-          pixels[bar_row * 2 + 1][c] = color
+        bar_vp0 = bar_row << 1
+        bar_vp1 = bar_vp0 + 1
+        c = bar_sx
+        while c <= bar_ex
+          if c >= 0 && c < view_w && dists[c] >= tz
+            ci = c - bar_sx
+            color = ci < filled ? "0;200;0" : "200;0;0"
+            pixels[bar_vp0][c] = color
+            pixels[bar_vp1][c] = color
+          end
+          c += 1
         end
       end
 
