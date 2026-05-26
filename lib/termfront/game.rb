@@ -137,6 +137,7 @@ module Termfront
         loop do
           now = clock
           dt = now - last_time
+          dt = Config::MAX_DT if dt > Config::MAX_DT
           last_time = now
 
           keys = @input.process(stdin, player: @player)
@@ -186,6 +187,7 @@ module Termfront
         loop do
           now = clock
           dt = now - last_time
+          dt = Config::MAX_DT if dt > Config::MAX_DT
           last_time = now
 
           keys = @input.process(stdin, player: @player)

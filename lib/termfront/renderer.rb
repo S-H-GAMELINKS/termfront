@@ -603,8 +603,9 @@ module Termfront
         next if actual_h < 1 || actual_w < 1
 
         sprite_id = e.sprite_id
+        sprite_fn = Sprite::REGISTRY[sprite_id]
         fallback_color = sprite_id == :executor ? EXECUTOR_FALLBACK : CRAWLER_FALLBACK
-        use_shape = actual_h >= 6
+        use_shape = actual_h >= 6 && sprite_fn
         r_top = (draw_top + 1) >> 1
         r_bot = draw_bot >> 1
         actual_h_f = actual_h.to_f
@@ -626,8 +627,8 @@ module Termfront
                 if use_shape
                   ny0 = top_in ? (vp0 - draw_top) / actual_h_f : nil
                   ny1 = bot_in ? (vp1 - draw_top) / actual_h_f : nil
-                  top_color = ny0 ? Sprite.for(sprite_id, nx, ny0) : nil
-                  bot_color = ny1 ? Sprite.for(sprite_id, nx, ny1) : nil
+                  top_color = ny0 ? sprite_fn.call(nx, ny0) : nil
+                  bot_color = ny1 ? sprite_fn.call(nx, ny1) : nil
                   if top_color || bot_color
                     pixels[vp0][c] = top_color if top_color
                     pixels[vp1][c] = bot_color if bot_color

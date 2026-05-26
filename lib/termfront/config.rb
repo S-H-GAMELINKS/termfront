@@ -4,6 +4,7 @@ module Termfront
   module Config
     FRAME_DT      = 1.0 / 60.0
     RENDER_DT     = 1.0 / 60.0
+    MAX_DT        = 1.0 / 20.0
     FOV           = 66.0 * Math::PI / 180.0
     PLAYER_RADIUS = 0.2
     KEY_TIMEOUT   = 5
