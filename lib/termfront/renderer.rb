@@ -12,6 +12,17 @@ module Termfront
     FG_256 = Array.new(256) { |i| "\e[38;5;#{i}m".freeze }.freeze
     BG_256 = Array.new(256) { |i| "\e[48;5;#{i}m".freeze }.freeze
 
+    EXECUTOR_FALLBACK = Color.rgb_to_256(100, 60, 200)
+    CRAWLER_FALLBACK  = Color.rgb_to_256(220, 140, 30)
+    ENEMY_BAR_FILL    = Color.rgb_to_256(0, 200, 0)
+    ENEMY_BAR_EMPTY   = Color.rgb_to_256(200, 0, 0)
+    PROJ_EXECUTOR     = Color.rgb_to_256(94, 94, 255)
+    PROJ_DEFAULT      = Color.rgb_to_256(255, 210, 80)
+    ALLY_FALLBACK     = Color.rgb_to_256(70, 210, 255)
+    ALLY_BAR_FILL     = Color.rgb_to_256(0, 180, 255)
+    ALLY_BAR_EMPTY    = Color.rgb_to_256(80, 20, 20)
+    DAMAGE_FLASH_RAMP = Array.new(256) { |i| Color.rgb_to_256(i, 0, 0) }.freeze
+
     def initialize(stdout)
       @stdout = stdout
       @buf_view_w = 0
@@ -23,8 +34,6 @@ module Termfront
       @radar_drop_cells = {}
       @radar_terminal_cells = {}
       @radar_ally_cells = {}
-      @fg_truecolor_cache = {}
-      @bg_truecolor_cache = {}
       @enemy_sprites = []
       @proj_sprites = []
       @drop_sprites = []
@@ -339,8 +348,6 @@ module Termfront
     def render_view(buf, view_h, view_w, pixels)
       fg_256 = FG_256
       bg_256 = BG_256
-      fg_cache = @fg_truecolor_cache
-      bg_cache = @bg_truecolor_cache
 
       r = 0
       while r < view_h
@@ -350,7 +357,7 @@ module Termfront
         bot_row = pixels[vp1]
 
         first = top_row[0]
-        if first.is_a?(Integer) && bot_row[0] == first
+        if bot_row[0] == first
           uniform = true
           cu = 1
           while cu < view_w
@@ -367,7 +374,6 @@ module Termfront
           end
         end
 
-        pfg = nil
         pbg = nil
 
         c = 0
@@ -382,31 +388,15 @@ module Termfront
             end
             n = run_end - c
 
-            if tc.is_a?(Integer)
-              if tc != pbg
-                buf << bg_256[tc]
-                pbg = tc
-                pfg = nil
-              end
-              buf << (n == 1 ? " " : " " * n)
-            else
-              if tc != pfg || pbg
-                buf << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
-                pfg = tc
-                pbg = nil
-              end
-              buf << (n == 1 ? "\xE2\x96\x88" : "\xE2\x96\x88" * n)
+            if tc != pbg
+              buf << bg_256[tc]
+              pbg = tc
             end
+            buf << (n == 1 ? " " : " " * n)
             c = run_end
           else
-            if tc != pfg || bc != pbg
-              fg = tc.is_a?(Integer) ? fg_256[tc] : (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
-              bg = bc.is_a?(Integer) ? bg_256[bc] : (bg_cache[bc] ||= "\e[48;2;#{bc}m".freeze)
-              buf << fg << bg
-              pfg = tc
-              pbg = bc
-            end
-            buf << "\xE2\x96\x80"
+            buf << fg_256[tc] << bg_256[bc] << "\xE2\x96\x80"
+            pbg = bc
             c += 1
           end
         end
@@ -613,7 +603,7 @@ module Termfront
         next if actual_h < 1 || actual_w < 1
 
         sprite_id = e.sprite_id
-        fallback_color = sprite_id == :executor ? "100;60;200" : "220;140;30"
+        fallback_color = sprite_id == :executor ? EXECUTOR_FALLBACK : CRAWLER_FALLBACK
         use_shape = actual_h >= 6
         r_top = (draw_top + 1) >> 1
         r_bot = draw_bot >> 1
@@ -671,7 +661,7 @@ module Termfront
         while c <= bar_ex
           if c >= 0 && c < view_w && dists[c] >= tz
             ci = c - bar_sx
-            color = ci < filled ? "0;200;0" : "200;0;0"
+            color = ci < filled ? ENEMY_BAR_FILL : ENEMY_BAR_EMPTY
             pixels[bar_vp0][c] = color
             pixels[bar_vp1][c] = color
           end
@@ -746,7 +736,7 @@ module Termfront
         start_x = 0 if start_x < 0
         end_x = sx + pw / 2
         end_x = view_w_last if end_x > view_w_last
-        proj_color = p.type == :executor ? "94;94;255" : "255;210;80"
+        proj_color = p.type == :executor ? PROJ_EXECUTOR : PROJ_DEFAULT
         r_top = (draw_top + 1) >> 1
         r_bot = draw_bot >> 1
         r_bot = r_top + 1 if r_bot < r_top + 1
@@ -834,8 +824,8 @@ module Termfront
               pixels[vp0][c] = top_color if top_color
               pixels[vp1][c] = bot_color if bot_color
             else
-              pixels[vp0][c] = "70;210;255" if top_in
-              pixels[vp1][c] = "70;210;255" if bot_in
+              pixels[vp0][c] = ALLY_FALLBACK if top_in
+              pixels[vp1][c] = ALLY_FALLBACK if bot_in
             end
           end
         end
@@ -855,7 +845,7 @@ module Termfront
           next if dists[c] < tz
 
           ci = c - bar_sx
-          color = ci < filled ? "0;180;255" : "80;20;20"
+          color = ci < filled ? ALLY_BAR_FILL : ALLY_BAR_EMPTY
           pixels[bar_row * 2][c] = color
           pixels[bar_row * 2 + 1][c] = color
         end
@@ -865,9 +855,10 @@ module Termfront
     def overlay_damage_flash(pixels, view_h, view_w, player)
       return unless player.damage_flash > 0
 
-      intensity = player.damage_flash * 60
+      intensity = (player.damage_flash * 60).to_i
+      intensity = 255 if intensity > 255
       flash_w = 2
-      color = "#{intensity};0;0"
+      color = DAMAGE_FLASH_RAMP[intensity]
 
       view_h.times do |r|
         vp0 = r * 2
@@ -896,24 +887,5 @@ module Termfront
       buf << "\e[#{cr};#{fs}H\e[93m#{"*" * (fe - fs + 1)}\e[0m"
     end
 
-    def bg_only?(color)
-      color.is_a?(Integer)
-    end
-
-    def ansi_fg(color)
-      if color.is_a?(Integer)
-        FG_256[color]
-      else
-        @fg_truecolor_cache[color] ||= "\e[38;2;#{color}m".freeze
-      end
-    end
-
-    def ansi_bg(color)
-      if color.is_a?(Integer)
-        BG_256[color]
-      else
-        @bg_truecolor_cache[color] ||= "\e[48;2;#{color}m".freeze
-      end
-    end
   end
 end

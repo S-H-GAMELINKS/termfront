@@ -11,6 +11,11 @@ module Termfront
     SUB_TEXT = "Terminal FPS"
     MENU_ITEMS = ["[P] PvP", "[F] Wavesfight", "[C] Campaign", "[S] Training", "[Q] Quit"].freeze
 
+    TITLE_CEIL_C              = Color.rgb_to_256(0, 0, 95)
+    TITLE_FLOOR_C             = Color.rgb_to_256(28, 28, 28)
+    TITLE_EXECUTOR_FALLBACK   = Color.rgb_to_256(100, 60, 200)
+    TITLE_CRAWLER_FALLBACK    = Color.rgb_to_256(220, 140, 30)
+
     def initialize(stdout)
       @stdout = stdout
       @title_spin = 0.0
@@ -143,8 +148,8 @@ module Termfront
       dists = Array.new(tw, 100.0)
       horizon = (virt_h / 2 + bob).to_i
 
-      ceil_c = "0;0;95"
-      floor_c = "28;28;28"
+      ceil_c = TITLE_CEIL_C
+      floor_c = TITLE_FLOOR_C
 
       tw.times do |col|
         ray_a = cam_a - half_fov + fov * col.to_f / tw
@@ -201,9 +206,9 @@ module Termfront
           flash = @demo_fire / 4.0 * (1.0 - dist / 4.0)
           rr = (grey + flash * 160).to_i.clamp(0, 255)
           gg = (grey + flash * 60).to_i.clamp(0, 255)
-          wall_c = "#{rr};#{gg};#{grey}"
+          wall_c = Color.rgb_to_256(rr, gg, grey)
         else
-          wall_c = "#{grey};#{grey};#{grey}"
+          wall_c = Color.rgb_to_256(grey, grey, grey)
         end
 
         virt_h.times do |vr|
@@ -271,7 +276,7 @@ module Termfront
               sc = Sprite.for(type, nx, ny)
               next unless sc
             else
-              sc = type == :executor ? "100;60;200" : "220;140;30"
+              sc = type == :executor ? TITLE_EXECUTOR_FALLBACK : TITLE_CRAWLER_FALLBACK
             end
             color[vr * tw + c] = sc
           end
@@ -279,8 +284,8 @@ module Termfront
       end
 
       # Half-block rendering - build each line directly to skip fit_ansi
-      fg_cache = (@title_fg_cache ||= {})
-      bg_cache = (@title_bg_cache ||= {})
+      fg_256 = Renderer::FG_256
+      bg_256 = Renderer::BG_256
       cap_w = tw < cols ? tw : cols
 
       r = 0
@@ -302,7 +307,7 @@ module Termfront
             cu += 1
           end
           if uniform
-            lines[r] = +(bg_cache[first_tc] ||= "\e[48;2;#{first_tc}m".freeze) << "\e[K\e[0m"
+            lines[r] = +bg_256[first_tc] << "\e[K\e[0m"
             r += 1
             next
           end
@@ -352,7 +357,7 @@ module Termfront
               line << (n == 1 ? " " : " " * n)
             else
               if pfg != tc || pbg
-                line << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
+                line << fg_256[tc]
                 line << "\e[49m" if pbg
                 pfg = tc
                 pbg = nil
@@ -364,15 +369,15 @@ module Termfront
           else
             if tc && bc
               if pfg != tc || pbg != bc
-                line << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
-                line << (bg_cache[bc] ||= "\e[48;2;#{bc}m".freeze)
+                line << fg_256[tc]
+                line << bg_256[bc]
                 pfg = tc
                 pbg = bc
               end
               line << "\xE2\x96\x80"
             elsif tc
               if pfg != tc || pbg
-                line << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
+                line << fg_256[tc]
                 line << "\e[49m" if pbg
                 pfg = tc
                 pbg = nil
@@ -380,7 +385,7 @@ module Termfront
               line << "\xE2\x96\x80"
             elsif bc
               if pfg != bc || pbg
-                line << (fg_cache[bc] ||= "\e[38;2;#{bc}m".freeze)
+                line << fg_256[bc]
                 line << "\e[49m" if pbg
                 pfg = bc
                 pbg = nil

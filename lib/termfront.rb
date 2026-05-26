@@ -4,6 +4,7 @@ require "io/console"
 
 require_relative "termfront/version"
 require_relative "termfront/config"
+require_relative "termfront/color"
 require_relative "termfront/map"
 require_relative "termfront/weapon/base"
 require_relative "termfront/weapon/pistol"
