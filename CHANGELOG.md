@@ -10,6 +10,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 - Restore the in-game and title screen render rate to 60 Hz (`Config::RENDER_DT = 1.0 / 60.0`) after testers reported choppy motion at 30 Hz; the hybrid rendering scaffolding is kept in place so the rate can be tuned later without code changes
 
+### Fixed
+
+- Treat `Errno::EAGAIN` from `syswrite` the same as `IO::WaitWritable` in `TerminalOutput.write_all` so the renderer keeps draining its frame buffer instead of crashing when the terminal's PTY temporarily refuses additional bytes
+
 ## [0.1.6] - 2026-05-26
 
 ### Changed

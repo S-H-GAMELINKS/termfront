@@ -62,7 +62,7 @@ module Termfront
         begin
           written = io.syswrite(data.byteslice(total, bytes - total))
           total += written
-        rescue IO::WaitWritable
+        rescue IO::WaitWritable, Errno::EAGAIN
           IO.select(nil, [io])
         end
       end
