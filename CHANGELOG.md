@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-05-26
+
 ### Fixed
 
 - Stop the `AudioManager` BGM and looping-SE threads from spinning at 100 % CPU when the audio player spawns but exits immediately (e.g. no usable audio device, codec missing, or backend not running). The non-looping playback loops now bail out if `spawn_player` returns `nil` or if the previous playback finished in under 500 ms, instead of relentlessly respawning a process that never plays anything. On a tester's CPU-bound host this was over 95 % of the process's CPU budget, making the renderer look heavy when the real culprit was the audio thread
