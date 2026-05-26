@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+RubyVM::YJIT.enable if defined?(RubyVM::YJIT)
+
+require "stackprof"
+require "termfront"
+
+out = ENV.fetch("STACKPROF_OUT", "/tmp/termfront-stackprof.dump")
+interval = Integer(ENV.fetch("STACKPROF_INTERVAL", "1000"))
+mode = ENV.fetch("STACKPROF_MODE", "cpu").to_sym
+
+StackProf.run(mode: mode, out: out, interval: interval, raw: true) do
+  Termfront.start
+end
+
+warn "stackprof dump written to #{out}"

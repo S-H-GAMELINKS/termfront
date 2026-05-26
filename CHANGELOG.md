@@ -6,6 +6,28 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-05-26
+
+### Changed
+
+- Restore the in-game and title screen render rate to 60 Hz (`Config::RENDER_DT = 1.0 / 60.0`) after testers reported choppy motion at 30 Hz; the hybrid rendering scaffolding is kept in place so the rate can be tuned later without code changes
+- Cap the per-frame `dt` at `Config::MAX_DT` (50 ms / 20 FPS-equivalent) in the singleplayer, Wavesfight, and PvP game loops so a frame that runs long under a constrained host no longer translates into a single oversized physics step. Movement, weapon timers, and projectile motion now stay smooth — the simulation simply slows for that frame instead of producing a teleporting opponent or instant fire-rate
+- Hoist the sprite shape function out of the per-cell loop in `Renderer#overlay_enemies_3d`: look up `Sprite::REGISTRY[sprite_id]` once per enemy and call it directly from the inner cell loop instead of going through `Sprite.for` (which re-hashed `REGISTRY` and re-checked the result for `nil` on every cell). With several enemies on-screen the per-cell hash lookup overhead disappears
+- Migrate the PvP/Wavesfight client render paths to 256-color SGR sequences as well: add a `Sprite.player_enemy` variant pre-tinted toward red instead of recomputing the tint per cell, replace the per-cell `\e[38;2;…m` (and `\e[48;2;…m` for damage flash) escapes with `\e[38;5;Nm` lookups, drop the `tint_player_color` helper and its per-cell `String#split`/`Array#map` work, and reuse the renderer's shared `DAMAGE_FLASH_RAMP` for the screen-edge flash
+- Hand frame output off to a dedicated writer thread (`AsyncWriter`) so the game loop's `syswrite` becomes a non-blocking `Queue#push` and the actual `IO#syswrite` runs on a background thread that releases the GVL during the PTY write. The main loop no longer pays the wall-clock cost of waiting for the terminal to drain its buffer; when a write is still in progress, the latest frame replaces the queued one so the terminal always sees the freshest frame instead of a backlog
+- Drop truecolor SGR sequences from the in-game and title 3D views; convert every sprite, fallback, bar, projectile, drop, and damage-flash color to an xterm 256-color index once with `Color.rgb_to_256`, simplify `Renderer#render_view` to a pure 256-color path that drops the per-cell `is_a?(Integer)` test and the truecolor SGR caches, and switch the title screen's half-block compositor to look up its escapes in the shared `FG_256` / `BG_256` tables. The 13-byte truecolor SGR shrinks to a 9-byte 256-color SGR (or shorter on cell boundaries via `\e[K`), the renderer's hottest cell loop loses its type dispatch, and the dead `bg_only?` / `ansi_fg` / `ansi_bg` helpers go away
+- Build the half-block rows in `TitleScreen#render` directly into the final per-row string with the column count already capped, skipping the per-row `TerminalOutput.fit_ansi` walk entirely; rows that come out uniformly the same color collapse to `\e[bg]\e[K\e[0m`, fully-blank rows ship as a single space run, and the byte stream the terminal sees for each title frame shrinks substantially
+- Coalesce same-color cell runs in `TitleScreen#render`'s half-block compositor and only emit SGR escapes on transitions instead of wrapping every cell in `\e[…m…\e[0m`; the per-row string handed to `fit_ansi` shrinks from one bracketed SGR per cell to a handful of color changes, cutting both the title frame's byte volume and `fit_ansi`'s per-row scan cost
+- Emit `\e[K` (Erase to End of Line) for rows in `Renderer#render_view` whose top/bottom cells are all the same integer background color; the ceiling-only and floor-only bands now ship as `\e[bg]\e[K\r\n` per row instead of the full per-cell glyph sequence, slashing the ANSI byte volume of those rows from `view_w` bytes plus per-cell SGR transitions down to about a dozen bytes total
+- Memoize `AudioManager#which` results in a class-level cache so the per-command `PATH` walk (and the per-directory `File.executable?` stat) only runs the first time a binary is looked up; subsequent `AudioManager.new` calls during mode transitions hit the cache instead of re-scanning `PATH`, which removes a noticeable stutter on WSL hosts where Windows-mounted `PATH` entries are slow to stat
+- Coalesce same-color runs of cells in `Renderer#render_view` with a single `String#*` instead of one `buf << " "` (or `buf << "█"`) per cell, and rewrite the row/column loops as `while` so the ceiling/floor bands cost one short string copy per row instead of dozens of one-byte appends
+- Skip the per-column DDA in `Renderer#render` when the player position, facing, map, and viewport are unchanged from the previous frame; the cached `@dists`, `@sides`, `@wtop`, `@wbot`, and `@wcol` arrays are reused so `cast_ray` and the wall-column projection only run when something actually moved
+- Bulk-fill the ceiling-only and floor-only rows of `Renderer#build_view_pixels` with `Array#fill` so each fully ceiling or fully floor row is written as a single C-level call, with the column-major wall loop kept for the mixed band in the middle
+
+### Fixed
+
+- Treat `Errno::EAGAIN` from `syswrite` the same as `IO::WaitWritable` in `TerminalOutput.write_all` so the renderer keeps draining its frame buffer instead of crashing when the terminal's PTY temporarily refuses additional bytes
+
 ## [0.1.6] - 2026-05-26
 
 ### Changed

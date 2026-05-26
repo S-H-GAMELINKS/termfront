@@ -22,8 +22,11 @@ module Termfront
         end
       end
 
+      SHOCK_COLOR  = Color.rgb_to_256(60, 200, 220)
+      NORMAL_COLOR = Color.rgb_to_256(220, 200, 60)
+
       def sprite_color
-        @type.to_s.start_with?("shock") ? "60;200;220" : "220;200;60"
+        @type.to_s.start_with?("shock") ? SHOCK_COLOR : NORMAL_COLOR
       end
 
       def radar_color

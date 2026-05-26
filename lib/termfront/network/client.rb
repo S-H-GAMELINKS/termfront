@@ -6,6 +6,14 @@ module Termfront
       TEAM_SIZES = [1, 2, 4].freeze
       ALLOWED_WEAPONS = %w[pistol ar].freeze
 
+      ALLY_PLAYER_FALLBACK  = Color.rgb_to_256(70, 210, 255)
+      ENEMY_PLAYER_FALLBACK = Color.rgb_to_256(255, 110, 80)
+      ALLY_BAR_FILL         = Color.rgb_to_256(0, 180, 255)
+      ENEMY_BAR_FILL        = Color.rgb_to_256(255, 80, 80)
+      BAR_EMPTY             = Color.rgb_to_256(80, 20, 20)
+      PROJ_SHOCK            = Color.rgb_to_256(80, 220, 255)
+      PROJ_NORMAL           = Color.rgb_to_256(255, 210, 80)
+
       def initialize(stdout)
         @stdout = stdout
         @conn = Connection.new
@@ -199,6 +207,7 @@ module Termfront
           loop do
             now = clock
             dt = now - last_time
+            dt = Config::MAX_DT if dt > Config::MAX_DT
             last_time = now
 
             keys = @input.process(stdin, player: @player)
@@ -548,33 +557,34 @@ module Termfront
             next unless top_in || bot_in
 
             if use_shape
+              sprite_fn = color_mode == :ally ? Sprite.method(:player) : Sprite.method(:player_enemy)
               ny0 = top_in ? (vp0 - draw_top).to_f / actual_h : nil
               ny1 = bot_in ? (vp1 - draw_top).to_f / actual_h : nil
-              top_color = ny0 ? tint_player_color(Sprite.player(nx, ny0), color_mode) : nil
-              bot_color = ny1 ? tint_player_color(Sprite.player(nx, ny1), color_mode) : nil
+              top_color = ny0 ? sprite_fn.call(nx, ny0) : nil
+              bot_color = ny1 ? sprite_fn.call(nx, ny1) : nil
               next unless top_color || bot_color
 
               buf << "\e[#{3 + r};#{c + 1}H"
               buf << if top_color && bot_color
                        if top_color == bot_color
-                         "\e[38;2;#{top_color}m\xE2\x96\x88\e[0m"
+                         "\e[38;5;#{top_color}m\xE2\x96\x88\e[0m"
                        else
-                         "\e[38;2;#{top_color};48;2;#{bot_color}m\xE2\x96\x80\e[0m"
+                         "\e[38;5;#{top_color};48;5;#{bot_color}m\xE2\x96\x80\e[0m"
                        end
                      elsif top_color
-                       "\e[38;2;#{top_color}m\xE2\x96\x80\e[0m"
+                       "\e[38;5;#{top_color}m\xE2\x96\x80\e[0m"
                      else
-                       "\e[38;2;#{bot_color}m\xE2\x96\x84\e[0m"
+                       "\e[38;5;#{bot_color}m\xE2\x96\x84\e[0m"
                      end
             else
-              fc = color_mode == :ally ? "70;210;255" : "255;110;80"
+              fc = color_mode == :ally ? ALLY_PLAYER_FALLBACK : ENEMY_PLAYER_FALLBACK
               buf << "\e[#{3 + r};#{c + 1}H"
               buf << if top_in && bot_in
-                       "\e[38;2;#{fc}m\xE2\x96\x88\e[0m"
+                       "\e[38;5;#{fc}m\xE2\x96\x88\e[0m"
                      elsif top_in
-                       "\e[38;2;#{fc}m\xE2\x96\x80\e[0m"
+                       "\e[38;5;#{fc}m\xE2\x96\x80\e[0m"
                      else
-                       "\e[38;2;#{fc}m\xE2\x96\x84\e[0m"
+                       "\e[38;5;#{fc}m\xE2\x96\x84\e[0m"
                      end
             end
           end
@@ -590,15 +600,15 @@ module Termfront
         max_total = Config::SHIELD_MAX + Config::HEALTH_MAX
         hp_pct = total.to_f / max_total
         filled = (hp_pct * (bar_ex - bar_sx + 1)).ceil
-        fill_color = color_mode == :ally ? "0;180;255" : "255;80;80"
+        fill_color = color_mode == :ally ? ALLY_BAR_FILL : ENEMY_BAR_FILL
 
         bar_sx.upto(bar_ex) do |c|
           next if c < 0 || c >= view_w
           next if dists[c] < tz
 
           ci = c - bar_sx
-          color = ci < filled ? fill_color : "80;20;20"
-          buf << "\e[#{3 + bar_row};#{c + 1}H\e[38;2;#{color}m\xE2\x96\x88\e[0m"
+          color = ci < filled ? fill_color : BAR_EMPTY
+          buf << "\e[#{3 + bar_row};#{c + 1}H\e[38;5;#{color}m\xE2\x96\x88\e[0m"
         end
       end
 
@@ -649,26 +659,15 @@ module Termfront
               proj_color = projectile[:color]
               buf << "\e[#{3 + r};#{c + 1}H"
               buf << if top_in && bot_in
-                       "\e[38;2;#{proj_color}m\xE2\x96\x88\e[0m"
+                       "\e[38;5;#{proj_color}m\xE2\x96\x88\e[0m"
                      elsif top_in
-                       "\e[38;2;#{proj_color}m\xE2\x96\x80\e[0m"
+                       "\e[38;5;#{proj_color}m\xE2\x96\x80\e[0m"
                      else
-                       "\e[38;2;#{proj_color}m\xE2\x96\x84\e[0m"
+                       "\e[38;5;#{proj_color}m\xE2\x96\x84\e[0m"
                      end
             end
           end
         end
-      end
-
-      def tint_player_color(color, mode)
-        return nil unless color
-        return color if mode == :ally
-
-        r, g, b = color.split(";").map(&:to_i)
-        nr = [[r + 70, 255].min, 0].max
-        ng = [[g - 50, 0].max, 0].max
-        nb = [[b - 90, 0].max, 0].max
-        "#{nr};#{ng};#{nb}"
       end
 
       def render_pvp_hud(buf, cols)
@@ -806,13 +805,15 @@ module Termfront
       def render_damage_flash(buf, view_h, view_w)
         return unless @player.damage_flash > 0
 
-        intensity = @player.damage_flash * 60
+        intensity = (@player.damage_flash * 60).to_i
+        intensity = 255 if intensity > 255
+        color = Renderer::DAMAGE_FLASH_RAMP[intensity]
         flash_w = 2
 
         view_h.times do |r|
-          buf << "\e[#{3 + r};1H\e[48;2;#{intensity};0;0m#{" " * flash_w}\e[0m"
+          buf << "\e[#{3 + r};1H\e[48;5;#{color}m#{" " * flash_w}\e[0m"
           rc = [view_w - flash_w + 1, 1].max
-          buf << "\e[#{3 + r};#{rc}H\e[48;2;#{intensity};0;0m#{" " * flash_w}\e[0m"
+          buf << "\e[#{3 + r};#{rc}H\e[48;5;#{color}m#{" " * flash_w}\e[0m"
         end
       end
 
@@ -849,7 +850,7 @@ module Termfront
 
       def spawn_remote_projectile_effect(msg)
         shock = msg[:w].to_s.start_with?("shock")
-        color = shock ? "80;220;255" : "255;210;80"
+        color = shock ? PROJ_SHOCK : PROJ_NORMAL
         speed = shock ? 18.0 : 14.0
         angle = msg[:a]
         @projectiles << {

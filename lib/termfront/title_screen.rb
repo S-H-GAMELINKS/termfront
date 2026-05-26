@@ -11,6 +11,11 @@ module Termfront
     SUB_TEXT = "Terminal FPS"
     MENU_ITEMS = ["[P] PvP", "[F] Wavesfight", "[C] Campaign", "[S] Training", "[Q] Quit"].freeze
 
+    TITLE_CEIL_C              = Color.rgb_to_256(0, 0, 95)
+    TITLE_FLOOR_C             = Color.rgb_to_256(28, 28, 28)
+    TITLE_EXECUTOR_FALLBACK   = Color.rgb_to_256(100, 60, 200)
+    TITLE_CRAWLER_FALLBACK    = Color.rgb_to_256(220, 140, 30)
+
     def initialize(stdout)
       @stdout = stdout
       @title_spin = 0.0
@@ -143,8 +148,8 @@ module Termfront
       dists = Array.new(tw, 100.0)
       horizon = (virt_h / 2 + bob).to_i
 
-      ceil_c = "0;0;95"
-      floor_c = "28;28;28"
+      ceil_c = TITLE_CEIL_C
+      floor_c = TITLE_FLOOR_C
 
       tw.times do |col|
         ray_a = cam_a - half_fov + fov * col.to_f / tw
@@ -201,9 +206,9 @@ module Termfront
           flash = @demo_fire / 4.0 * (1.0 - dist / 4.0)
           rr = (grey + flash * 160).to_i.clamp(0, 255)
           gg = (grey + flash * 60).to_i.clamp(0, 255)
-          wall_c = "#{rr};#{gg};#{grey}"
+          wall_c = Color.rgb_to_256(rr, gg, grey)
         else
-          wall_c = "#{grey};#{grey};#{grey}"
+          wall_c = Color.rgb_to_256(grey, grey, grey)
         end
 
         virt_h.times do |vr|
@@ -271,36 +276,146 @@ module Termfront
               sc = Sprite.for(type, nx, ny)
               next unless sc
             else
-              sc = type == :executor ? "100;60;200" : "220;140;30"
+              sc = type == :executor ? TITLE_EXECUTOR_FALLBACK : TITLE_CRAWLER_FALLBACK
             end
             color[vr * tw + c] = sc
           end
         end
       end
 
-      # Half-block rendering
-      th.times do |r|
-        vp0 = r * 2
-        vp1 = r * 2 + 1
-        line = +""
-        tw.times do |c|
-          tc = color[vp0 * tw + c]
-          bc = color[vp1 * tw + c]
-          line << if tc && bc
-                    if tc == bc
-                      "\e[38;2;#{tc}m\xE2\x96\x88\e[0m"
-                    else
-                      "\e[38;2;#{tc};48;2;#{bc}m\xE2\x96\x80\e[0m"
-                    end
-                  elsif tc
-                    "\e[38;2;#{tc}m\xE2\x96\x80\e[0m"
-                  elsif bc
-                    "\e[38;2;#{bc}m\xE2\x96\x84\e[0m"
-                  else
-                    " "
-                  end
+      # Half-block rendering - build each line directly to skip fit_ansi
+      fg_256 = Renderer::FG_256
+      bg_256 = Renderer::BG_256
+      cap_w = tw < cols ? tw : cols
+
+      r = 0
+      while r < th
+        vp0_offset = (r * 2) * tw
+        vp1_offset = vp0_offset + tw
+
+        first_tc = color[vp0_offset]
+        first_bc = color[vp1_offset]
+
+        if first_tc && first_tc == first_bc
+          uniform = true
+          cu = 1
+          while cu < cap_w
+            if color[vp0_offset + cu] != first_tc || color[vp1_offset + cu] != first_bc
+              uniform = false
+              break
+            end
+            cu += 1
+          end
+          if uniform
+            lines[r] = +bg_256[first_tc] << "\e[K\e[0m"
+            r += 1
+            next
+          end
+        elsif first_tc.nil? && first_bc.nil?
+          all_nil = true
+          cu = 1
+          while cu < cap_w
+            if !color[vp0_offset + cu].nil? || !color[vp1_offset + cu].nil?
+              all_nil = false
+              break
+            end
+            cu += 1
+          end
+          if all_nil
+            lines[r] = " " * cols
+            r += 1
+            next
+          end
         end
-        lines[r] = TerminalOutput.fit_ansi(line, cols)
+
+        line = +""
+        pfg = nil
+        pbg = nil
+        visible = 0
+
+        c = 0
+        while c < tw && visible < cap_w
+          tc = color[vp0_offset + c]
+          bc = color[vp1_offset + c]
+
+          if tc == bc
+            run_end = c + 1
+            while run_end < tw &&
+                  color[vp0_offset + run_end] == tc &&
+                  color[vp1_offset + run_end] == bc
+              run_end += 1
+            end
+            n = run_end - c
+            n = cap_w - visible if visible + n > cap_w
+
+            if tc.nil?
+              if pfg || pbg
+                line << "\e[0m"
+                pfg = nil
+                pbg = nil
+              end
+              line << (n == 1 ? " " : " " * n)
+            else
+              if pfg != tc || pbg
+                line << fg_256[tc]
+                line << "\e[49m" if pbg
+                pfg = tc
+                pbg = nil
+              end
+              line << (n == 1 ? "\xE2\x96\x88" : "\xE2\x96\x88" * n)
+            end
+            visible += n
+            c += n
+          else
+            if tc && bc
+              if pfg != tc || pbg != bc
+                line << fg_256[tc]
+                line << bg_256[bc]
+                pfg = tc
+                pbg = bc
+              end
+              line << "\xE2\x96\x80"
+            elsif tc
+              if pfg != tc || pbg
+                line << fg_256[tc]
+                line << "\e[49m" if pbg
+                pfg = tc
+                pbg = nil
+              end
+              line << "\xE2\x96\x80"
+            elsif bc
+              if pfg != bc || pbg
+                line << fg_256[bc]
+                line << "\e[49m" if pbg
+                pfg = bc
+                pbg = nil
+              end
+              line << "\xE2\x96\x84"
+            else
+              if pfg || pbg
+                line << "\e[0m"
+                pfg = nil
+                pbg = nil
+              end
+              line << " "
+            end
+            visible += 1
+            c += 1
+          end
+        end
+
+        if visible < cols
+          if pfg || pbg
+            line << "\e[0m"
+            pfg = nil
+            pbg = nil
+          end
+          line << (" " * (cols - visible))
+        end
+        line << "\e[0m" if pfg || pbg
+
+        lines[r] = line
+        r += 1
       end
 
       # Title text + menu items (memoized per cols)

@@ -8,6 +8,8 @@ module Termfront
   class AudioManager
     Player = Struct.new(:command, :supports_loop, keyword_init: true)
 
+    WHICH_CACHE = {}
+
     def initialize
       @manifest = load_manifest
       @bgm_player = detect_player(%w[ffplay afplay paplay aplay], prefer_loop: true)
@@ -160,12 +162,18 @@ module Termfront
     end
 
     def which(command)
+      return WHICH_CACHE[command] if WHICH_CACHE.key?(command)
+
+      resolved = nil
       ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
         candidate = File.join(dir, command)
-        return candidate if File.executable?(candidate) && !File.directory?(candidate)
+        if File.executable?(candidate) && !File.directory?(candidate)
+          resolved = candidate
+          break
+        end
       end
 
-      nil
+      WHICH_CACHE[command] = resolved
     end
 
     def asset_path(kind, name)
