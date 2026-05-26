@@ -54,23 +54,27 @@ module Termfront
 
       prepare_frame_buffers(view_w, virt_h)
 
-      dx = Math.cos(player.angle)
-      dy = Math.sin(player.angle)
-      plane_x = -dy * Math.tan(Config::FOV / 2.0)
-      plane_y = dx * Math.tan(Config::FOV / 2.0)
+      cast_state = [player.x, player.y, player.angle, map.object_id, view_w, virt_h]
+      if cast_state != @last_cast_state
+        dx = Math.cos(player.angle)
+        dy = Math.sin(player.angle)
+        plane_x = -dy * Math.tan(Config::FOV / 2.0)
+        plane_y = dx * Math.tan(Config::FOV / 2.0)
 
-      view_w.times do |c|
-        cam = 2.0 * c / view_w - 1.0
-        @dists[c], @sides[c] = cast_ray(map, player.x, player.y, dx + plane_x * cam, dy + plane_y * cam)
-      end
+        view_w.times do |c|
+          cam = 2.0 * c / view_w - 1.0
+          @dists[c], @sides[c] = cast_ray(map, player.x, player.y, dx + plane_x * cam, dy + plane_y * cam)
+        end
 
-      vmid = virt_h / 2.0
-      view_w.times do |c|
-        d = @dists[c]
-        lh = d > 0.01 ? (virt_h / d).to_i : virt_h
-        @wtop[c] = [(vmid - lh / 2.0).to_i, 0].max
-        @wbot[c] = [(vmid + lh / 2.0).to_i, virt_h].min
-        @wcol[c] = Sprite.wall_brightness(d, @sides[c])
+        vmid = virt_h / 2.0
+        view_w.times do |c|
+          d = @dists[c]
+          lh = d > 0.01 ? (virt_h / d).to_i : virt_h
+          @wtop[c] = [(vmid - lh / 2.0).to_i, 0].max
+          @wbot[c] = [(vmid + lh / 2.0).to_i, virt_h].min
+          @wcol[c] = Sprite.wall_brightness(d, @sides[c])
+        end
+        @last_cast_state = cast_state
       end
       build_view_pixels(virt_h, view_w, @wtop, @wbot, @wcol)
       overlay_enemies_3d(@pixels, view_h, view_w, @dists, player, enemies, projectiles, drops)

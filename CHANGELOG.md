@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ### Changed
 
+- Skip the per-column DDA in `Renderer#render` when the player position, facing, map, and viewport are unchanged from the previous frame; the cached `@dists`, `@sides`, `@wtop`, `@wbot`, and `@wcol` arrays are reused so `cast_ray` and the wall-column projection only run when something actually moved
 - Bulk-fill the ceiling-only and floor-only rows of `Renderer#build_view_pixels` with `Array#fill` so each fully ceiling or fully floor row is written as a single C-level call, with the column-major wall loop kept for the mixed band in the middle
 
 ### Fixed
