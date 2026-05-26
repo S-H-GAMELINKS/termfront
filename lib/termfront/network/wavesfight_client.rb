@@ -57,7 +57,7 @@ module Termfront
             lines[rows / 2 - 2] = TerminalOutput.fit_ansi("#{" " * (mc - 1)}\e[1;93m#{msg}\e[0m", cols)
             detail = "#{queued_mission_name}  |  #{queued_difficulty_name}"
             dc = [(cols - detail.size) / 2 + 1, 1].max
-            lines[rows / 2] = TerminalOutput.fit_ansi("#{" " * (dc - 1)}\e[38;2;170;170;190m#{detail}\e[0m", cols)
+            lines[rows / 2] = TerminalOutput.fit_ansi("#{" " * (dc - 1)}\e[38;5;#{Color.rgb_to_256(170, 170, 190)}m#{detail}\e[0m", cols)
             hint = "(ESC to cancel)"
             hc = [(cols - hint.size) / 2 + 1, 1].max
             lines[rows / 2 + 2] = TerminalOutput.fit_ansi("#{" " * (hc - 1)}\e[90m#{hint}\e[0m", cols)

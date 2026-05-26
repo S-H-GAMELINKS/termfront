@@ -18,6 +18,11 @@ module Termfront
     PLAYER_NECK = Color.rgb_to_256(30, 100, 160)
     PLAYER_BODY = Color.rgb_to_256(25, 80, 140)
 
+    PLAYER_ENEMY_EYE  = Color.rgb_to_256(210, 170, 165)
+    PLAYER_ENEMY_HEAD = Color.rgb_to_256(110, 80, 90)
+    PLAYER_ENEMY_NECK = Color.rgb_to_256(100, 50, 70)
+    PLAYER_ENEMY_BODY = Color.rgb_to_256(95, 30, 50)
+
     DUMMY_HEAD  = Color.rgb_to_256(235, 80, 80)
     DUMMY_TORSO = Color.rgb_to_256(210, 210, 210)
     DUMMY_LOWER = Color.rgb_to_256(200, 200, 200)
@@ -53,6 +58,18 @@ module Termfront
       return PLAYER_BODY if ((nx - 0.5) / 0.25)**2 + ((ny - 0.50) / 0.22)**2 <= 1.0
       return PLAYER_BODY if ((nx - 0.38) / 0.10)**2 + ((ny - 0.85) / 0.15)**2 <= 1.0
       return PLAYER_BODY if ((nx - 0.62) / 0.10)**2 + ((ny - 0.85) / 0.15)**2 <= 1.0
+
+      nil
+    end
+
+    def player_enemy(nx, ny)
+      return PLAYER_ENEMY_EYE  if ((nx - 0.43) / 0.045)**2 + ((ny - 0.11) / 0.045)**2 <= 1.0
+      return PLAYER_ENEMY_EYE  if ((nx - 0.57) / 0.045)**2 + ((ny - 0.11) / 0.045)**2 <= 1.0
+      return PLAYER_ENEMY_HEAD if ((nx - 0.5) / 0.18)**2 + ((ny - 0.12) / 0.12)**2 <= 1.0
+      return PLAYER_ENEMY_NECK if ((nx - 0.5) / 0.38)**2 + ((ny - 0.30) / 0.08)**2 <= 1.0
+      return PLAYER_ENEMY_BODY if ((nx - 0.5) / 0.25)**2 + ((ny - 0.50) / 0.22)**2 <= 1.0
+      return PLAYER_ENEMY_BODY if ((nx - 0.38) / 0.10)**2 + ((ny - 0.85) / 0.15)**2 <= 1.0
+      return PLAYER_ENEMY_BODY if ((nx - 0.62) / 0.10)**2 + ((ny - 0.85) / 0.15)**2 <= 1.0
 
       nil
     end
