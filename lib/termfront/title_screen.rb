@@ -278,20 +278,58 @@ module Termfront
         end
       end
 
-      # Half-block rendering with RLE + ANSI transition coalescing
+      # Half-block rendering - build each line directly to skip fit_ansi
       fg_cache = (@title_fg_cache ||= {})
       bg_cache = (@title_bg_cache ||= {})
+      cap_w = tw < cols ? tw : cols
 
       r = 0
       while r < th
         vp0_offset = (r * 2) * tw
         vp1_offset = vp0_offset + tw
+
+        first_tc = color[vp0_offset]
+        first_bc = color[vp1_offset]
+
+        if first_tc && first_tc == first_bc
+          uniform = true
+          cu = 1
+          while cu < cap_w
+            if color[vp0_offset + cu] != first_tc || color[vp1_offset + cu] != first_bc
+              uniform = false
+              break
+            end
+            cu += 1
+          end
+          if uniform
+            lines[r] = +(bg_cache[first_tc] ||= "\e[48;2;#{first_tc}m".freeze) << "\e[K\e[0m"
+            r += 1
+            next
+          end
+        elsif first_tc.nil? && first_bc.nil?
+          all_nil = true
+          cu = 1
+          while cu < cap_w
+            if !color[vp0_offset + cu].nil? || !color[vp1_offset + cu].nil?
+              all_nil = false
+              break
+            end
+            cu += 1
+          end
+          if all_nil
+            lines[r] = " " * cols
+            r += 1
+            next
+          end
+        end
+
         line = +""
         pfg = nil
         pbg = nil
+        visible = 0
 
         c = 0
-        while c < tw
+        while c < tw && visible < cap_w
           tc = color[vp0_offset + c]
           bc = color[vp1_offset + c]
 
@@ -303,11 +341,15 @@ module Termfront
               run_end += 1
             end
             n = run_end - c
+            n = cap_w - visible if visible + n > cap_w
 
             if tc.nil?
+              if pfg || pbg
+                line << "\e[0m"
+                pfg = nil
+                pbg = nil
+              end
               line << (n == 1 ? " " : " " * n)
-              pfg = nil
-              pbg = nil
             else
               if pfg != tc || pbg
                 line << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
@@ -317,7 +359,8 @@ module Termfront
               end
               line << (n == 1 ? "\xE2\x96\x88" : "\xE2\x96\x88" * n)
             end
-            c = run_end
+            visible += n
+            c += n
           else
             if tc && bc
               if pfg != tc || pbg != bc
@@ -344,16 +387,29 @@ module Termfront
               end
               line << "\xE2\x96\x84"
             else
+              if pfg || pbg
+                line << "\e[0m"
+                pfg = nil
+                pbg = nil
+              end
               line << " "
-              pfg = nil
-              pbg = nil
             end
+            visible += 1
             c += 1
           end
         end
 
+        if visible < cols
+          if pfg || pbg
+            line << "\e[0m"
+            pfg = nil
+            pbg = nil
+          end
+          line << (" " * (cols - visible))
+        end
         line << "\e[0m" if pfg || pbg
-        lines[r] = TerminalOutput.fit_ansi(line, cols)
+
+        lines[r] = line
         r += 1
       end
 
