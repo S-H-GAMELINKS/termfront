@@ -289,22 +289,41 @@ module Termfront
       floor_c = Config::FLOOR_C
       pixels = @pixels
 
+      min_wt = wtop.min
+      max_wb = wbot.max
+      upper_done = min_wt < virt_h ? min_wt : virt_h
+      lower_start = max_wb > upper_done ? max_wb : upper_done
+      lower_start = virt_h if lower_start > virt_h
+
+      vr = 0
+      while vr < upper_done
+        pixels[vr].fill(ceil_c, 0, view_w)
+        vr += 1
+      end
+
+      vr_bot = virt_h - 1
+      while vr_bot >= lower_start
+        pixels[vr_bot].fill(floor_c, 0, view_w)
+        vr_bot -= 1
+      end
+      middle_end = vr_bot + 1
+
       c = 0
       while c < view_w
         wt = wtop[c]
         wb = wbot[c]
         wc = wcol[c]
 
-        vr = 0
-        while vr < wt && vr < virt_h
+        vr = upper_done
+        while vr < wt && vr < middle_end
           pixels[vr][c] = ceil_c
           vr += 1
         end
-        while vr < wb && vr < virt_h
+        while vr < wb && vr < middle_end
           pixels[vr][c] = wc
           vr += 1
         end
-        while vr < virt_h
+        while vr < middle_end
           pixels[vr][c] = floor_c
           vr += 1
         end

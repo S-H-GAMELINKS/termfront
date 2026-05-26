@@ -10,6 +10,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 - Restore the in-game and title screen render rate to 60 Hz (`Config::RENDER_DT = 1.0 / 60.0`) after testers reported choppy motion at 30 Hz; the hybrid rendering scaffolding is kept in place so the rate can be tuned later without code changes
 
+### Changed
+
+- Bulk-fill the ceiling-only and floor-only rows of `Renderer#build_view_pixels` with `Array#fill` so each fully ceiling or fully floor row is written as a single C-level call, with the column-major wall loop kept for the mixed band in the middle
+
 ### Fixed
 
 - Treat `Errno::EAGAIN` from `syswrite` the same as `IO::WaitWritable` in `TerminalOutput.write_all` so the renderer keeps draining its frame buffer instead of crashing when the terminal's PTY temporarily refuses additional bytes
