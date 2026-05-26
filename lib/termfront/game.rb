@@ -3,7 +3,7 @@
 module Termfront
   class Game
     def initialize
-      @stdout = STDOUT
+      @stdout = AsyncWriter.new(STDOUT)
       @audio = AudioManager.new
       @renderer = Renderer.new(@stdout)
       @input = Input.new
@@ -36,6 +36,7 @@ module Termfront
       @crash = e
     ensure
       @audio.close
+      @stdout.close if @stdout.respond_to?(:close) && !@stdout.equal?(STDOUT)
       leave_alt_screen
       if @crash
         warn "#{@crash.class}: #{@crash.message}"
