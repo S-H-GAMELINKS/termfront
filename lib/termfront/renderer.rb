@@ -348,6 +348,25 @@ module Termfront
         vp1 = vp0 + 1
         top_row = pixels[vp0]
         bot_row = pixels[vp1]
+
+        first = top_row[0]
+        if first.is_a?(Integer) && bot_row[0] == first
+          uniform = true
+          cu = 1
+          while cu < view_w
+            if top_row[cu] != first || bot_row[cu] != first
+              uniform = false
+              break
+            end
+            cu += 1
+          end
+          if uniform
+            buf << bg_256[first] << "\e[K\e[0m\r\n"
+            r += 1
+            next
+          end
+        end
+
         pfg = nil
         pbg = nil
 
