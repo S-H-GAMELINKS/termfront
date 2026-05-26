@@ -278,29 +278,83 @@ module Termfront
         end
       end
 
-      # Half-block rendering
-      th.times do |r|
-        vp0 = r * 2
-        vp1 = r * 2 + 1
+      # Half-block rendering with RLE + ANSI transition coalescing
+      fg_cache = (@title_fg_cache ||= {})
+      bg_cache = (@title_bg_cache ||= {})
+
+      r = 0
+      while r < th
+        vp0_offset = (r * 2) * tw
+        vp1_offset = vp0_offset + tw
         line = +""
-        tw.times do |c|
-          tc = color[vp0 * tw + c]
-          bc = color[vp1 * tw + c]
-          line << if tc && bc
-                    if tc == bc
-                      "\e[38;2;#{tc}m\xE2\x96\x88\e[0m"
-                    else
-                      "\e[38;2;#{tc};48;2;#{bc}m\xE2\x96\x80\e[0m"
-                    end
-                  elsif tc
-                    "\e[38;2;#{tc}m\xE2\x96\x80\e[0m"
-                  elsif bc
-                    "\e[38;2;#{bc}m\xE2\x96\x84\e[0m"
-                  else
-                    " "
-                  end
+        pfg = nil
+        pbg = nil
+
+        c = 0
+        while c < tw
+          tc = color[vp0_offset + c]
+          bc = color[vp1_offset + c]
+
+          if tc == bc
+            run_end = c + 1
+            while run_end < tw &&
+                  color[vp0_offset + run_end] == tc &&
+                  color[vp1_offset + run_end] == bc
+              run_end += 1
+            end
+            n = run_end - c
+
+            if tc.nil?
+              line << (n == 1 ? " " : " " * n)
+              pfg = nil
+              pbg = nil
+            else
+              if pfg != tc || pbg
+                line << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
+                line << "\e[49m" if pbg
+                pfg = tc
+                pbg = nil
+              end
+              line << (n == 1 ? "\xE2\x96\x88" : "\xE2\x96\x88" * n)
+            end
+            c = run_end
+          else
+            if tc && bc
+              if pfg != tc || pbg != bc
+                line << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
+                line << (bg_cache[bc] ||= "\e[48;2;#{bc}m".freeze)
+                pfg = tc
+                pbg = bc
+              end
+              line << "\xE2\x96\x80"
+            elsif tc
+              if pfg != tc || pbg
+                line << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
+                line << "\e[49m" if pbg
+                pfg = tc
+                pbg = nil
+              end
+              line << "\xE2\x96\x80"
+            elsif bc
+              if pfg != bc || pbg
+                line << (fg_cache[bc] ||= "\e[38;2;#{bc}m".freeze)
+                line << "\e[49m" if pbg
+                pfg = bc
+                pbg = nil
+              end
+              line << "\xE2\x96\x84"
+            else
+              line << " "
+              pfg = nil
+              pbg = nil
+            end
+            c += 1
+          end
         end
+
+        line << "\e[0m" if pfg || pbg
         lines[r] = TerminalOutput.fit_ansi(line, cols)
+        r += 1
       end
 
       # Title text + menu items (memoized per cols)

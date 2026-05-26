@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ### Changed
 
+- Coalesce same-color cell runs in `TitleScreen#render`'s half-block compositor and only emit SGR escapes on transitions instead of wrapping every cell in `\e[…m…\e[0m`; the per-row string handed to `fit_ansi` shrinks from one bracketed SGR per cell to a handful of color changes, cutting both the title frame's byte volume and `fit_ansi`'s per-row scan cost
 - Emit `\e[K` (Erase to End of Line) for rows in `Renderer#render_view` whose top/bottom cells are all the same integer background color; the ceiling-only and floor-only bands now ship as `\e[bg]\e[K\r\n` per row instead of the full per-cell glyph sequence, slashing the ANSI byte volume of those rows from `view_w` bytes plus per-cell SGR transitions down to about a dozen bytes total
 - Memoize `AudioManager#which` results in a class-level cache so the per-command `PATH` walk (and the per-directory `File.executable?` stat) only runs the first time a binary is looked up; subsequent `AudioManager.new` calls during mode transitions hit the cache instead of re-scanning `PATH`, which removes a noticeable stutter on WSL hosts where Windows-mounted `PATH` entries are slow to stat
 - Coalesce same-color runs of cells in `Renderer#render_view` with a single `String#*` instead of one `buf << " "` (or `buf << "█"`) per cell, and rewrite the row/column loops as `while` so the ceiling/floor bands cost one short string copy per row instead of dozens of one-byte appends
