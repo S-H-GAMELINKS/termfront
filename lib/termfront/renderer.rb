@@ -342,34 +342,43 @@ module Termfront
       fg_cache = @fg_truecolor_cache
       bg_cache = @bg_truecolor_cache
 
-      view_h.times do |r|
+      r = 0
+      while r < view_h
         vp0 = r * 2
-        vp1 = r * 2 + 1
-        pfg = nil
-        pbg = nil
+        vp1 = vp0 + 1
         top_row = pixels[vp0]
         bot_row = pixels[vp1]
+        pfg = nil
+        pbg = nil
 
-        view_w.times do |c|
+        c = 0
+        while c < view_w
           tc = top_row[c]
           bc = bot_row[c]
 
           if tc == bc
+            run_end = c + 1
+            while run_end < view_w && top_row[run_end] == tc && bot_row[run_end] == bc
+              run_end += 1
+            end
+            n = run_end - c
+
             if tc.is_a?(Integer)
               if tc != pbg
                 buf << bg_256[tc]
                 pbg = tc
                 pfg = nil
               end
-              buf << " "
+              buf << (n == 1 ? " " : " " * n)
             else
               if tc != pfg || pbg
                 buf << (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
                 pfg = tc
                 pbg = nil
               end
-              buf << "\xE2\x96\x88"
+              buf << (n == 1 ? "\xE2\x96\x88" : "\xE2\x96\x88" * n)
             end
+            c = run_end
           else
             if tc != pfg || bc != pbg
               fg = tc.is_a?(Integer) ? fg_256[tc] : (fg_cache[tc] ||= "\e[38;2;#{tc}m".freeze)
@@ -379,9 +388,11 @@ module Termfront
               pbg = bc
             end
             buf << "\xE2\x96\x80"
+            c += 1
           end
         end
         buf << "\e[0m\r\n"
+        r += 1
       end
     end
 
