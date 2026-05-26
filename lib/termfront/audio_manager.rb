@@ -41,9 +41,13 @@ module Termfront
             loop do
               break if channel_stopped?(:bgm)
 
+              start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               @bgm_pid = spawn_player(@bgm_player, path, loop_playback: false)
+              break unless @bgm_pid
+
               wait_for_channel(:bgm)
               break if channel_stopped?(:bgm)
+              break if Process.clock_gettime(Process::CLOCK_MONOTONIC) - start < 0.5
             end
           end
         rescue StandardError
@@ -101,9 +105,13 @@ module Termfront
             loop do
               break if channel_stopped?(:loop_se)
 
+              start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               @loop_se_pid = spawn_player(@loop_se_player, path, loop_playback: false)
+              break unless @loop_se_pid
+
               wait_for_channel(:loop_se)
               break if channel_stopped?(:loop_se)
+              break if Process.clock_gettime(Process::CLOCK_MONOTONIC) - start < 0.5
             end
           end
         rescue StandardError

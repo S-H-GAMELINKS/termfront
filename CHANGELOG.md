@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop the `AudioManager` BGM and looping-SE threads from spinning at 100 % CPU when the audio player spawns but exits immediately (e.g. no usable audio device, codec missing, or backend not running). The non-looping playback loops now bail out if `spawn_player` returns `nil` or if the previous playback finished in under 500 ms, instead of relentlessly respawning a process that never plays anything. On a tester's CPU-bound host this was over 95 % of the process's CPU budget, making the renderer look heavy when the real culprit was the audio thread
+
 ### Changed
 
 - Adapt the in-game render rate to the host's headroom: an `AdaptiveRenderRate` module tracks how often a frame exceeds 85 % of the 60 Hz budget and, after 30 consecutive over-budget frames, downshifts the singleplayer / Wavesfight render rate to 30 Hz; if the host catches back up for 60 consecutive frames it upshifts back to 60 Hz. Capable machines keep running at 60 Hz, while testers on lower-spec CPUs / TDP-throttled laptops fall back to a steady 30 Hz instead of a stuttering 60 Hz, and the rate resets on every new game loop entry so a freshly launched match starts at 60 Hz
