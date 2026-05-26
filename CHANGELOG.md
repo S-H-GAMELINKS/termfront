@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ### Changed
 
+- Memoize `AudioManager#which` results in a class-level cache so the per-command `PATH` walk (and the per-directory `File.executable?` stat) only runs the first time a binary is looked up; subsequent `AudioManager.new` calls during mode transitions hit the cache instead of re-scanning `PATH`, which removes a noticeable stutter on WSL hosts where Windows-mounted `PATH` entries are slow to stat
 - Coalesce same-color runs of cells in `Renderer#render_view` with a single `String#*` instead of one `buf << " "` (or `buf << "█"`) per cell, and rewrite the row/column loops as `while` so the ceiling/floor bands cost one short string copy per row instead of dozens of one-byte appends
 - Skip the per-column DDA in `Renderer#render` when the player position, facing, map, and viewport are unchanged from the previous frame; the cached `@dists`, `@sides`, `@wtop`, `@wbot`, and `@wcol` arrays are reused so `cast_ray` and the wall-column projection only run when something actually moved
 - Bulk-fill the ceiling-only and floor-only rows of `Renderer#build_view_pixels` with `Array#fill` so each fully ceiling or fully floor row is written as a single C-level call, with the column-major wall loop kept for the mixed band in the middle
