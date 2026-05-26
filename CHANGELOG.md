@@ -6,12 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-05-26
+
 ### Changed
 
 - Restore the in-game and title screen render rate to 60 Hz (`Config::RENDER_DT = 1.0 / 60.0`) after testers reported choppy motion at 30 Hz; the hybrid rendering scaffolding is kept in place so the rate can be tuned later without code changes
-
-### Changed
-
 - Cap the per-frame `dt` at `Config::MAX_DT` (50 ms / 20 FPS-equivalent) in the singleplayer, Wavesfight, and PvP game loops so a frame that runs long under a constrained host no longer translates into a single oversized physics step. Movement, weapon timers, and projectile motion now stay smooth — the simulation simply slows for that frame instead of producing a teleporting opponent or instant fire-rate
 - Hoist the sprite shape function out of the per-cell loop in `Renderer#overlay_enemies_3d`: look up `Sprite::REGISTRY[sprite_id]` once per enemy and call it directly from the inner cell loop instead of going through `Sprite.for` (which re-hashed `REGISTRY` and re-checked the result for `nil` on every cell). With several enemies on-screen the per-cell hash lookup overhead disappears
 - Migrate the PvP/Wavesfight client render paths to 256-color SGR sequences as well: add a `Sprite.player_enemy` variant pre-tinted toward red instead of recomputing the tint per cell, replace the per-cell `\e[38;2;…m` (and `\e[48;2;…m` for damage flash) escapes with `\e[38;5;Nm` lookups, drop the `tint_player_color` helper and its per-cell `String#split`/`Array#map` work, and reuse the renderer's shared `DAMAGE_FLASH_RAMP` for the screen-edge flash
