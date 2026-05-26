@@ -130,9 +130,10 @@ module Termfront
     end
 
     def run_game_loop(show_complete_banner: true)
+      AdaptiveRenderRate.reset!
       STDIN.raw do |stdin|
         last_time = clock
-        last_render = last_time - Config::RENDER_DT
+        last_render = last_time - AdaptiveRenderRate.current_dt
 
         loop do
           now = clock
@@ -149,7 +150,7 @@ module Termfront
           end
 
           update(dt)
-          if now - last_render >= Config::RENDER_DT
+          if now - last_render >= AdaptiveRenderRate.current_dt
             @renderer.render(
               player: @player, map: @map,
               enemies: @enemies, projectiles: @projectiles,
@@ -180,9 +181,10 @@ module Termfront
     end
 
     def run_wavesfight_loop
+      AdaptiveRenderRate.reset!
       STDIN.raw do |stdin|
         last_time = clock
-        last_render = last_time - Config::RENDER_DT
+        last_render = last_time - AdaptiveRenderRate.current_dt
 
         loop do
           now = clock
@@ -199,7 +201,7 @@ module Termfront
           end
 
           update(dt)
-          if now - last_render >= Config::RENDER_DT
+          if now - last_render >= AdaptiveRenderRate.current_dt
             @renderer.render(
               player: @player, map: @map,
               enemies: @enemies, projectiles: @projectiles,
@@ -220,7 +222,7 @@ module Termfront
             show_wave_clear
             start_wavesfight_wave
             last_time = clock
-            last_render = clock - Config::RENDER_DT
+            last_render = clock - AdaptiveRenderRate.current_dt
           end
 
           cap_frame(now)
@@ -659,6 +661,7 @@ module Termfront
 
     def cap_frame(frame_start)
       spent = clock - frame_start
+      AdaptiveRenderRate.observe(spent)
       remain = Config::FRAME_DT - spent
       sleep(remain) if remain > 0
     end

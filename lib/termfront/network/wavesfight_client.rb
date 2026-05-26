@@ -406,6 +406,7 @@ module Termfront
 
       def cap_frame(frame_start)
         spent = clock - frame_start
+        AdaptiveRenderRate.observe(spent)
         remain = Config::FRAME_DT - spent
         sleep(remain) if remain > 0
       end
