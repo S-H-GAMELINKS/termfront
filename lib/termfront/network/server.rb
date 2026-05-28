@@ -4,6 +4,7 @@ require "socket"
 require "openssl"
 require "json"
 require "set"
+require "timeout"
 
 module Termfront
   module Network
@@ -11,6 +12,7 @@ module Termfront
       TEAM_SIZES = [1, 2, 4].freeze
       MAX_QUEUE_PER_MODE = 64
       QUEUE_HANDSHAKE_TIMEOUT = 5
+      TLS_HANDSHAKE_TIMEOUT = 5
       MAX_MSG_BYTES = 16 * 1024
       MATCH_MAX_DURATION = 30 * 60
       MATCH_IDLE_TIMEOUT = 5 * 60
@@ -77,28 +79,36 @@ module Termfront
 
         tcp_server = TCPServer.new("0.0.0.0", @port)
         ssl_server = OpenSSL::SSL::SSLServer.new(tcp_server, ctx)
-        ssl_server.start_immediately = true
+        ssl_server.start_immediately = false
 
         puts "Termfront PvP server listening on 0.0.0.0:#{@port}"
 
         loop do
           begin
             client = ssl_server.accept
-            configure_client(client)
-            Thread.new(client) do |c|
-              enqueue_player(c)
-            rescue StandardError => e
-              puts "Connection handler error: #{e.class}"
-              begin
-                c.close
-              rescue StandardError
-                nil
-              end
-            end
-          rescue OpenSSL::SSL::SSLError => e
-            puts "SSL handshake failed: #{e.class}"
           rescue StandardError => e
             puts "Accept error: #{e.class}"
+            next
+          end
+
+          Thread.new(client) do |c|
+            configure_client(c)
+            Timeout.timeout(TLS_HANDSHAKE_TIMEOUT) { c.accept }
+            enqueue_player(c)
+          rescue OpenSSL::SSL::SSLError, Timeout::Error => e
+            puts "SSL handshake failed: #{e.class}"
+            begin
+              c.close
+            rescue StandardError
+              nil
+            end
+          rescue StandardError => e
+            puts "Connection handler error: #{e.class}"
+            begin
+              c.close
+            rescue StandardError
+              nil
+            end
           end
         end
       end

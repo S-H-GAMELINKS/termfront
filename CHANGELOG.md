@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-05-28
+
+### Changed
+
+- Move the TLS handshake off the multiplayer server's accept loop. `OpenSSL::SSL::SSLServer#start_immediately` is now `false`, so `accept` returns as soon as the TCP accept completes and the `SSLSocket#accept` handshake runs inside the per-connection thread under a new `TLS_HANDSHAKE_TIMEOUT` deadline (5 s). Previously every TLS handshake — the RSA private-key operation, the cert-chain bytes, and any network waits — ran serially on the single accept-loop thread, so a synchronized join of N players took roughly N × per-handshake-time before the last one was usable; a stalled mid-handshake client also blocked every other pending connection (head-of-line blocking at the TLS layer). With the handshake hoisted into its own thread, connections only contend on the GVL for the actual CPU work, a slow client only blocks itself, and `configure_client` is applied before the handshake so TCP_NODELAY is in effect for the handshake's own small records
+
 ## [0.1.8] - 2026-05-26
 
 ### Fixed
